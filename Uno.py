@@ -361,7 +361,7 @@ class Hand():
         self.wilds = {wild:[] for wild in range(LENWILDS)}
         for (index, card) in self.currCards.items():
             # points
-            self.points += card.points
+            self.points += card[1].points
             # color
             if card[1].colorIndex is not None:
                 self.colors[card[1].colorIndex].append(index)
