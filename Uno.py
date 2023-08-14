@@ -116,6 +116,14 @@ class Card():
                 self.special = SPECIALS[specialWild]
                 self.specialIndex = specialWild
 
+        # get the card points
+        if self.wildIndex is not None:
+            self.points = WILDS_POINTS[self.wildIndex]
+        elif self.specialIndex is not None:
+            self.points = SPECIALS_POINTS[self.specialIndex]
+        else:
+            self.points = self.valueIndex
+
         # give the card a name
         if self.colorIndex is not None:
             self.name = self.color + ' '
@@ -130,8 +138,8 @@ class Card():
         return self.name
 
     def __repr__(self):
-        return 'Card(%r, %r, %r, %s)'%(self.colorIndex, self.valueIndex,
-            self.specialWildIndex, self.name)
+        return 'Card(%r, %r, %r, %s, %d)'%(self.colorIndex, self.valueIndex,
+            self.specialWildIndex, self.name, self.points)
 
     def __eq__(self, other):
         return (self.colorIndex == other.colorIndex) &\
@@ -259,6 +267,7 @@ class Deck():
         # iterate over cards to form the matrix - this could be made more
         # efficient, but the matrix is only built rarely, and the duplication
         # does not consume *so much* memory.
+        # TODO: confirm this will work corrrectly after the deck is reset
         rng = range(self.size)
         for row in rng:
             for col in rng:
@@ -335,36 +344,15 @@ class Hand():
         self.colorCounts = [0]*LENCOLORS
         self.__handSummarize__()
 
-        # update the points
-        self.__computePoints__()
-
-    def __computePoints__(self):
-        '''
-        Compute the (losing) points for this hand.
-        '''
-
-        self.points = 0
-
-        # number cards
-        self.points += sum([key*len(val) for (key, val) in self.values.items()
-            if val != {}])
-        # special cards
-        self.points += sum([SPECIALS_POINTS[key]*len(val) for (key, val) in
-            self.specials.items() if val != {}])
-        #for (index, cards) in self.specials.items():
-        #    self.points += SPECIALS_POINTS[index]*len(cards)
-        # wild cards
-        self.points += sum([WILDS_POINTS[key]*len(val) for (key, val) in
-            self.wilds.items() if val != {}])
-        #for (index, cards) in self.wilds.items():
-        #    self.points += WILDS_POINTS[index]*len(cards)
-
     def __handSummarize__(self):
         '''
         Generate a summary of the current hand, storing the index into the hand
         in colors, values, specials, and wilds (all index-based) dicts. Each
-        entry in these dicts is a list holding indices into the hand.
+        entry in these dicts is a list holding indices into the hand. This also
+        computes the points value for the hand.
         '''
+
+        self.points = 0
 
         # iterate over cards in the hand now
         self.colors = {colr:[] for colr in range(LENCOLORS)}
@@ -372,6 +360,8 @@ class Hand():
         self.specials = {spec:[] for spec in range(LENSPECIALS)}
         self.wilds = {wild:[] for wild in range(LENWILDS)}
         for (index, card) in self.currCards.items():
+            # points
+            self.points += card.points
             # color
             if card[1].colorIndex is not None:
                 self.colors[card[1].colorIndex].append(index)
@@ -392,7 +382,7 @@ class Hand():
         # determine which cards could be stacked
         self.canStack = np.ndarray(shape=(self.cardCount, self.cardCount),
             dtype=object)
-        rng = self.currCards.keys()
+        rng = self.currCards.keys() # TODO: how to do this to handle that keys won't be sequential
         for row in rng:
             for col in rng:
                 if row==col:
@@ -418,7 +408,6 @@ class Hand():
 
         if updateSummary:
             self.__handSummarize__()
-            self.__computePoints__()
 
     def playCard(self, card:int):
         '''
@@ -633,43 +622,55 @@ class Player():
                                 logg.debug('\n\t play same color special')
                                 break
                 else:
-                    # just play a same color card; TODO: pick highest value
+                    # just play a same color card
+                    bestScore = 0
                     for (handIndx, result) in playables.items():
                         if result[1] in [0, 3, 5]:
-                            if self.hand.currCards[handIndx][1].colorIndex is not None:
+                            if (self.hand.currCards[handIndx][1].colorIndex is not None) &\
+                                (self.hand.currCards[handIndx][1].points > bestScore):
                                 bestCard = handIndx
-                                logg.debug('\n\t play same color')
-                                break
+                                bestScore = self.hand.currCards[handIndx][1].points
+                    if bestCard is not None:
+                        logg.debug('\n\t play same color: %d points', bestScore)
             elif diffColor > 0:
-                # get the first different color card to play; TODO: pick highest value
+                # get the first different color card to play
+                bestScore = 0
                 for (handIndx, result) in playables.items():
-                    if result[1] in [4, 6]:
+                    if (result[1] in [4, 6]) &\
+                        (self.hand.currCards[handIndx][1].points > bestScore):
                         bestCard = handIndx
-                        logg.debug('\n\t play different color')
-                        break
+                        bestScore = self.hand.currCards[handIndx][1].points
+                if bestCard is not None:
+                    logg.debug('\n\t play different color: %d points', bestScore)
             elif wilds > 0:
-                # get the first wild card to play; TODO: pick highest value
+                # get the first wild card to play
+                bestScore = 0
                 for (handIndx, result) in playables.items():
-                    if result[1] == 1:
+                    if (result[1] == 1) & (self.hand.currCards[handIndx][1].points > bestScore):
                         bestCard = handIndx
-                        logg.debug('\n\t play wild')
-                        break
+                        bestScore = self.hand.currCards[handIndx][1].points
+                if bestCard is not None:
+                    logg.debug('\n\t play wild: %d points', bestScore)
                 # choose the color - the color with the most cards
                 bestColor = self.hand.colorOrders[0]
             else:
                 # should not happen
                 logg.debug('\nNo card to play - impossible?!')
 
-            # just pick the first playable card; TODO: pick highest value
+            # just pick the first playable card
+            bestScore = 0
             if (bestCard is None) and (playables != {}):
                 for handIndx in playables.keys():
-                    bestCard = handIndx
-                    logg.debug('\n\t play first playable card')
-                    break
+                    if self.hand.currCards[handIndx][1].points > bestScore:
+                        bestCard = handIndx
+                        bestScore = self.hand.currCards[handIndx][1].points
+                if bestCard is not None:
+                    logg.debug('\n\t play highest value playable card: %d points', bestScore)
 
             # play the best card
             if bestCard is not None:
-                logg.debug('\n\tBest card = %s', self.hand.currCards[bestCard][1])
+                logg.debug('\n\tBest card = %s (%d)', self.hand.currCards[bestCard][1],
+                           self.hand.currCards[bestCard][1].points)
                 _ = self.hand.playCard(bestCard)
                 thisGame.addToDiscard(bestCard, bestColor)
 
@@ -681,8 +682,8 @@ class Player():
 
         # update the card count for this player
         thisGame.playerCardsCounts[thisGame.currPlayer] = self.hand.cardCount
-        logg.debug('\n\tPlayer %s now has %d cards',
-            thisGame.players[thisGame.currPlayer].name, self.hand.cardCount)
+        logg.debug('\n\tPlayer %s now has %d cards, %d points',
+            thisGame.players[thisGame.currPlayer].name, self.hand.cardCount, self.hand.points)
 
 class Game():
     def __init__(self, descrip:str, players:list, start:int=0):
