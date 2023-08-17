@@ -12,6 +12,7 @@ import datetime as dt
 import multiprocessing
 import numpy as np
 import ipdb
+import re
 
 
 # globals
@@ -32,13 +33,15 @@ SPECIALS_POINTS = [20, 20, 20]
 WILDS_POINTS = [50, 100]
 
 
-def getCreateLogger(name:str, file:str=None, level:int=10):
+def getCreateLogger(name:str, file:str=None, level:int=0):
     '''
     Get a logging object, creating it if non-existent.
     :param name: name of the logger
     :param file: optional file to where to store the log; required
         if creating a new logger object
-    :param level: optional (default = 10) min level of logging
+    :param level: optional (default = 0) integer min level of logging; choices
+        are 0 = 'NOTSET', 10 = 'DEBUG', 20 = 'INFO', 30 = 'WARN', 40 = 'ERROR',
+        50 = 'CRITICAL'
     :return logger: logging object
     '''
 
@@ -50,8 +53,8 @@ def getCreateLogger(name:str, file:str=None, level:int=10):
         f_handler = logging.FileHandler(file)
 
         # Set handler levels
-        c_handler.setLevel(0)
-        f_handler.setLevel(0)
+        c_handler.setLevel(level)
+        f_handler.setLevel(level)
 
         # Create formatters and add it to handlers
         dfmt = '%Y%m%d_%H%M%S'
@@ -570,7 +573,9 @@ class Player():
             # do we need to draw a card?
             if (len(playableCards) == 0) & (whilePass == 0):
                 logg.info('\nNo cards to play, drawing 1')
-                self.hand.addCard(thisGame.deck.deal(1, thisGame)[0])
+                card = thisGame.deck.deal(1, thisGame)[0]
+                self.hand.addCard(card)
+                logg.info('\nDealt %s', card[1])
             else:
                 break
             whilePass += 1
@@ -720,6 +725,7 @@ class Game():
             provided, starter is randomly selected
         '''
 
+        # get inputs & set players data
         self.name = descrip
         self.players = players
         self.playersCount = len(players)
@@ -750,7 +756,7 @@ class Game():
         self.nextPlayer = self.__nextPlayer__()
 
         # talk
-        logg.info('\nUno game %s initialized with players', self.name)
+        logg.info('\n%s initialized with players', self.name)
         for player in self.players:
             logg.info(player)
         logg.info('\nInitial discard card = (%d = %r)', *self.discardPile[0])
@@ -818,7 +824,7 @@ class Game():
                 # +2 so draw 2
                 logg.info('\n +2 on discard pile, so drawing 2')
                 for (indx, card) in enumerate(self.deck.deal(2, self)):
-                    logg.info('\Dealt %s', card[1])
+                    logg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==1))
         elif self.currWild is not None:
@@ -839,7 +845,7 @@ class Game():
         status = '; '.join(['%s has %d cards worth %d points'%\
                             (player.name, player.hand.cardCount, player.hand.points)
                             for player in self.players])
-        logg.info(status)
+        logg.info('\n'+status)
 
 
     def play(self):
@@ -888,13 +894,17 @@ class Game():
 
 
 # testing code
-# start the log
+gameName = 'Test Game'
+logLevel = 20
+# start logger
 sttTS = dt.datetime.now()
-loggFilName = './Uno_%s.log'%(sttTS.strftime('%Y%m%d_%H%M%S'))
-logg = getCreateLogger(name='UNO', file=loggFilName)
+loggFilName = './Uno_%s_%s.log'%(re.sub(pattern='[^a-zA-Z0-9]',
+                                        repl='_', string=gameName),
+                                        sttTS.strftime('%Y%m%d_%H%M%S'))
+logg = getCreateLogger(name='UNO', file=loggFilName, level=logLevel)
 # setup the game
 np.random.seed(42)
-thisGame = Game('Test', [Player('Andrew', None), Player('Resham', None),
+thisGame = Game(gameName, [Player('Andrew', None), Player('Resham', None),
     Player('Ma', None)])
 
 
