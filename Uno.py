@@ -1,7 +1,9 @@
 '''
-# TODO: 3 playerCardsCounts not being updated
+# TODO: finish play function
+# TODO: improve talking
+# TODO: test test test
 # TODO: define player strategies
-# TODO: finish turn processing
+# TODO: add games running with multiprocessing
 '''
 from itertools import product
 import logging
@@ -301,6 +303,7 @@ class Deck():
                 # not enough cards, so reset the deck
                 logg.info('Only %d cards, so resetting deck from discard pile',
                     self.size)
+                ipdb.set_trace()
                 thisGame.rebuildDeck()
             elif self.size <= cards:
                 # this should never happen
@@ -312,8 +315,10 @@ class Deck():
         deal = [(indx, self.cards[indx]) for indx in range(self.topCard,
             self.topCard + cards)]
 
-        # update the topCard
+        # update the topCard & size of the deck
         self.topCard += cards
+        self.size -= cards
+
         return deal
 
 
@@ -353,48 +358,51 @@ class Hand():
         '''
 
         self.points = 0
-
-        # iterate over cards in the hand now
         self.colors = {colr:[] for colr in range(LENCOLORS)}
         self.values = {valu:[] for valu in range(LENVALUES)}
         self.specials = {spec:[] for spec in range(LENSPECIALS)}
         self.wilds = {wild:[] for wild in range(LENWILDS)}
-        for (index, card) in self.currCards.items():
-            # points
-            self.points += card[1].points
-            # color
-            if card[1].colorIndex is not None:
-                self.colors[card[1].colorIndex].append(index)
-            # value
-            if card[1].valueIndex is not None:
-                self.values[card[1].valueIndex].append(index)
-            # special
-            if card[1].specialIndex is not None:
-                self.specials[card[1].specialIndex].append(index)
-            # wild
-            if card[1].wildIndex is not None:
-                self.wilds[card[1].wildIndex].append(index)
 
-        # get number of cards for each color & get them sorted in descending
-        self.colorCounts = [len(self.colors[colr]) for colr in range(LENCOLORS)]
-        self.colorOrders = np.argsort(self.colorCounts)[::-1]
+        if self.cardCount > 0:
+            # iterate over cards in the hand now
+            for (index, card) in self.currCards.items():
+                # points
+                self.points += card[1].points
+                # color
+                if card[1].colorIndex is not None:
+                    self.colors[card[1].colorIndex].append(index)
+                # value
+                if card[1].valueIndex is not None:
+                    self.values[card[1].valueIndex].append(index)
+                # special
+                if card[1].specialIndex is not None:
+                    self.specials[card[1].specialIndex].append(index)
+                # wild
+                if card[1].wildIndex is not None:
+                    self.wilds[card[1].wildIndex].append(index)
 
-        # determine which cards could be stacked
-        # get curr card indices from 0 to max, though all won't be there;
-        # this is a bit wasteful, but I don't think it will really matter
-        rng = range(max(self.currCards.keys())+1)
-        self.canStack = np.ndarray(shape=(len(rng), len(rng)), dtype=object)
-        for row in rng:
-            for col in rng:
-                if row==col:
-                    self.canStack[row, col] = (None, None)
-                else:
-                    try:
-                        self.canStack[row, col] = self.currCards[row][1].\
-                            canPlace(self.currCards[col][1])
-                    except KeyError:
-                        # this card is no longer current, so just skip
-                        pass
+            # get number of cards for each color & get them sorted in descending
+            self.colorCounts = [len(self.colors[colr]) for colr in range(LENCOLORS)]
+            self.colorOrders = np.argsort(self.colorCounts)[::-1]
+
+            # determine which cards could be stacked
+            # get curr card indices from 0 to max, though all won't be there;
+            # this is a bit wasteful, but I don't think it will really matter
+            rng = range(max(self.currCards.keys())+1)
+            self.canStack = np.ndarray(shape=(len(rng), len(rng)), dtype=object)
+            for row in rng:
+                for col in rng:
+                    if row==col:
+                        self.canStack[row, col] = (None, None)
+                    else:
+                        try:
+                            self.canStack[row, col] = self.currCards[row][1].\
+                                canPlace(self.currCards[col][1])
+                        except KeyError:
+                            # this card is no longer current, so just skip
+                            pass
+        else:
+            self.colorCounts = self.colorOrders = [0]*LENCOLORS
 
     def addCard(self, card:tuple[int, Card], updateSummary:bool=True):
         '''
@@ -414,16 +422,20 @@ class Hand():
         if updateSummary:
             self.__handSummarize__()
 
-    def playCard(self, card:int):
+    def playCard(self, card:int, colorIndex:int=None):
         '''
         Play a card, moving it from the current hand, and updating the summary.
         :param card: index into the hand of the card to play
+        :param colorIndex: optional (default=None) color of card chosen if
+            played card is a wild
         :return card: tuple of card index and card to play
         :return remain: number of cards remaining
         '''
 
         # talk
         logg.info('\nPlaying %s', self.currCards[card][1])
+        if colorIndex is not None:
+            logg.info('\nNew color = %s', COLORS[colorIndex])
         # move to played cards
         this = self.currCards.pop(card)
         self.playedCards[card] = this
@@ -550,7 +562,7 @@ class Player():
             # wild +4s only playable if none of the current color in the hand
             if len(self.hand.colors[thisGame.currColor]) == 0:
                 playableCards.extend(self.hand.wilds[1])
-                logg.debug('\nNo %d color cards, so wild +4 is playable',
+                logg.debug('\nNo %s color cards, so wild +4 is playable',
                     COLORS[thisGame.currColor])
             # get uniques
             playableCards = set(playableCards)
@@ -558,7 +570,6 @@ class Player():
             # do we need to draw a card?
             if (len(playableCards) == 0) & (whilePass == 0):
                 logg.info('\nNo cards to play, drawing 1')
-                ipdb.set_trace()
                 self.hand.addCard(thisGame.deck.deal(1, thisGame)[0])
             else:
                 break
@@ -579,128 +590,114 @@ class Player():
             5 = same color, different special
             6 = different color, same special
             '''
-            sameColor = diffColor = wilds = sameColorSpecial = 0
-            playables = dict.fromkeys(playableCards)
+            playables = dict.fromkeys(playableCards, None)
+            sameColorPlay, sameColorSpecialPlay = [], []
+            diffColorPlay, wildPlay = [], []
+            #ipdb.set_trace()
             for handIndx in playableCards:
                 # get the card in the hand
                 card = self.hand.currCards[handIndx]
                 playables[handIndx] = thisGame.deck.canPlaceThis(card[0],
                     thisGame.currCardIndex)
                 # summarize
-                # count same colors
-                if (playables[handIndx][1] in [0, 3, 5]) &\
+                # get same colors
+                if (playables[handIndx][1] in [0, 2, 3, 5]) &\
                     (card[1].wildIndex is None):
-                    sameColor += 1
-                    sameColorSpecial += (playables[handIndx][1] == 5)
-                # count wilds
-                elif (playables[handIndx][1] in [0, 1]) &\
+                    if card[1].specialIndex is None:
+                        sameColorPlay.append((handIndx, card))
+                    elif card[1].specialIndex is not None:
+                        sameColorSpecialPlay.append((handIndx, card))
+                # get wilds
+                if (playables[handIndx][1] in [0, 1, 2]) &\
                     (card[1].wildIndex is not None):
-                    wilds += 1
-                # augment above if that card is wild
-                elif (playables[handIndx][1] == 2):
-                    if card[1].wildIndex is not None:
-                        wilds += 1
-                    elif card[1].colorIndex == thisGame.currColor:
-                        sameColor += 1
-                        sameColorSpecial += (card[1].specialIndex is not None)
-                # count different colors
-                diffColor += playables[handIndx][1] in [4, 6]
+                    wildPlay.append((handIndx, card))
+                # get different colors
+                if playables[handIndx][1] in [4, 6]:
+                    diffColorPlay.append((handIndx, card))
                 # talk
                 logg.debug('\nPlayable %d = (%d, %r): reason = %d', handIndx,
                     *self.hand.currCards[handIndx], playables[handIndx][1])
-            logg.debug('\nPlayable: %d same colors, %d different colors, %d wilds, %d same color specials',
-                sameColor, diffColor, wilds, sameColorSpecial)
+            # summarize the summary
+            sameColor = len(sameColorPlay)
+            sameColorSpecial = len(sameColorSpecialPlay)
+            diffColor = len(diffColorPlay)
+            wilds = len(wildPlay)
+            # talk
+            logg.debug('\nPlayable: %d same colors, %d same color specials, %d wilds, %d different colors',
+                sameColor, sameColorSpecial, wilds, diffColor)
+            logg.debug('\nPlayable same colors: %s\nPlayable same color specials, %s',
+                       sameColorPlay, sameColorSpecialPlay)
+            logg.debug('\nPlayable wilds: %s\nPlayable different colors: %s',
+                       wildPlay, diffColorPlay)
 
             ''' now determine the best card to play '''
-            '''  TODO: need to rethink this about rating plays'''
             bestCard = None
             bestColor = None
 
             # for now implement "prefer finish current color"
             #ipdb.set_trace()
-            if sameColor > 0:
+            if (sameColor > 0) | (sameColorSpecial > 0):
                 # can we place a skip or reverse to play an extra card
                 if (sameColorSpecial > 0) & (sameColor > 1) &\
                     (thisGame.playersCount == 2):
-                    # iterate over playables and find the relevant Cards
-                    playSpecials = {spec:[] for spec in range(SPECIALS_COUNT)}
-                    for (handIndx, result) in playables.items():
-                        if result[1] in [0, 5]:
-                            playSpecials[self.hand.currCards[handIndx][1].specialIndex] = handIndx
-                    # now that we have the playable specials cards, what to do
-                    if len(playSpecials[0]) > 0:
-                        # 2 players, so play reverse
-                        bestCard = playSpecials[0][0]
-                        logg.debug('\n2 players, play same color reverse')
-                    elif len(playSpecials[1]) > 0:
-                        # 2 players, so play skip
-                        bestCard = playSpecials[1][0]
-                        logg.debug('\n2 players, play same color skip')
+                    ipdb.set_trace()
+                    # get any skips or reverses, then take the first if extant
+                    playMe = [(handIndx, card) for (handIndx, card)
+                              in sameColorSpecialPlay if card.specialIndex < 2]
+                    if len(playMe) > 0:
+                        bestCard = playMe[0][0]
+                        logg.debug('\n2 players, play same color: %s', playMe[0][1][1])
                     else:
                         # can't get an extra turn :-(
                         pass
                 elif sameColorSpecial > 0:
                     # get the first same color special card to play
-                    for (handIndx, result) in playables.items():
-                        if result[1] in [0, 5]:
-                            if self.hand.currCards[handIndx][1].specialIndex is not None:
-                                bestCard = handIndx
-                                logg.debug('\nPlay same color special')
-                                break
+                    playMe = [(handIndx, card) for (handIndx, card) in sameColorSpecialPlay]
+                    bestCard = playMe[0][0]
+                    logg.debug('\nPlay same color special: %s', playMe[0][1][1])
                 else:
-                    # just play a same color card
-                    bestScore = 0
-                    for (handIndx, result) in playables.items():
-                        if result[1] in [0, 3, 5]:
-                            if (self.hand.currCards[handIndx][1].colorIndex is not None) &\
-                                (self.hand.currCards[handIndx][1].points > bestScore):
-                                bestCard = handIndx
-                                bestScore = self.hand.currCards[handIndx][1].points
-                    if bestCard is not None:
-                        logg.debug('\nPlay same color: %d points', bestScore)
+                    # just play a same color number card
+                    playMe = [(handIndx, card) for (handIndx, card) in sameColorPlay]
+                    playMe.sort(key=lambda x: x[1][1].points)
+                    bestCard = playMe[-1][0]
+                    logg.debug('\nPlay same color: %s', playMe[-1][1][1])
             elif wilds > 0:
                 # get the first wild card to play
-                bestScore = 0
-                for (handIndx, result) in playables.items():
-                    if (result[1] == 1) & (self.hand.currCards[handIndx][1].points > bestScore):
-                        bestCard = handIndx
-                        bestScore = self.hand.currCards[handIndx][1].points
-                if bestCard is not None:
-                    logg.debug('\nPlay wild: %d points', bestScore)
+                playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
+                playMe.sort(key=lambda x: x[1][1].points)
+                bestCard = playMe[-1][0]
+                logg.debug('\nPlay wild: %s', playMe[-1][1][1])
                 # choose the color - the color with the most cards
                 bestColor = self.hand.colorOrders[0]
+            # TODO: if just choosing a different color to play, and there are multiple colors possible
+            # shouldn't we check both points on the cards & also number of cards of each color possible?
             elif diffColor > 0:
                 # get the first different color card to play
-                bestScore = 0
-                for (handIndx, result) in playables.items():
-                    if (result[1] in [4, 6]) &\
-                        (self.hand.currCards[handIndx][1].points > bestScore):
-                        bestCard = handIndx
-                        bestScore = self.hand.currCards[handIndx][1].points
-                if bestCard is not None:
-                    logg.debug('\nPlay different color: %d points', bestScore)
+                playMe = [(handIndx, card) for (handIndx, card) in diffColorPlay]
+                playMe.sort(key=lambda x: x[1][1].points)
+                bestCard = playMe[-1][0]
+                logg.debug('\nPlay different color: %s', playMe[-1][1][1])
             else:
                 # should not happen
                 logg.debug('\nNo card to play - impossible?!')
                 ipdb.set_trace()
 
-            # just pick the first playable card
-            bestScore = 0
-            if (bestCard is None) and (playables != {}):
-                for handIndx in playables.keys():
-                    if self.hand.currCards[handIndx][1].points > bestScore:
-                        bestCard = handIndx
-                        bestScore = self.hand.currCards[handIndx][1].points
-                if bestCard is not None:
-                    logg.debug('\nPlay highest value playable card: %d points', bestScore)
+            # just pick the highest value playable card - also should not happen
+            if bestCard is None:
+                playMe = [(handIndx, self.hand.currCards[handIndx]) for handIndx
+                          in playables.keys()]
+                playMe.sort(key=lambda x: x[1][1].points)
+                bestCard = playMe[-1][0]
+                logg.debug('\nPlay highest value playable card: %s',
+                           self.hand.currCards[bestCard][1])
 
             # play the best card
             if bestCard is not None:
-                logg.debug('\nBest card = %s (%d)', self.hand.currCards[bestCard][1],
-                           self.hand.currCards[bestCard][1].points)
+                logg.info('\nBest card = %s', self.hand.currCards[bestCard][1])
                 thisGame.addToDiscard(self.hand.currCards[bestCard], bestColor)
-                _ = self.hand.playCard(bestCard)
-                
+                _ = self.hand.playCard(bestCard, bestColor)
+        else:
+            logg.info('\nNo cards to play - skipping turn')        
 
         # yell Uno!
         if self.hand.cardCount == 1:
@@ -829,16 +826,21 @@ class Game():
                 # wild+4, so draw 4
                 logg.info('\nWild +4 on discard pile, so drawing 4')
                 for (indx, card) in enumerate(self.deck.deal(4, self)):
-                    logg.info('\Dealt %s', card[1])
+                    logg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==3))
-                ipdb.set_trace()
         # take the turn
         self.players[self.currPlayer].takeTurn(self)
         # set the next player
         self.nextPlayer = self.__nextPlayer__()
         # set the new current player
         self.currPlayer = self.nextPlayer
+        # talk about all player's card counts & points
+        status = '; '.join(['%s has %d cards worth %d points'%\
+                            (player.name, player.hand.cardCount, player.hand.points)
+                            for player in self.players])
+        logg.info(status)
+
 
     def play(self):
         '''
@@ -852,6 +854,10 @@ class Game():
         # iterate over players, each taking their turn
         while min(self.playerCardsCounts) > 0:
             self.playOne()
+
+        # timing
+        gameTimeStp = dt.datetime.now()
+        gamePerfStp = time.perf_counter()
 
     def rebuildDeck(self):
         '''
