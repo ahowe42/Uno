@@ -13,6 +13,7 @@ import multiprocessing
 import numpy as np
 import ipdb
 import re
+from collections import OrderedDict
 
 
 # globals
@@ -335,8 +336,8 @@ class Hand():
         '''
 
         # initialize the hand
-        self.currCards = {}
-        self.playedCards = {}
+        self.currCards = OrderedDict()
+        self.playedCards = OrderedDict()
         self.nextIndex = 0
 
         # add dealt cards to this hand
@@ -371,16 +372,16 @@ class Hand():
             for (index, card) in self.currCards.items():
                 # points
                 self.points += card[1].points
-                # color
+                # colors
                 if card[1].colorIndex is not None:
                     self.colors[card[1].colorIndex].append(index)
-                # value
+                # values
                 if card[1].valueIndex is not None:
                     self.values[card[1].valueIndex].append(index)
-                # special
+                # specials
                 if card[1].specialIndex is not None:
                     self.specials[card[1].specialIndex].append(index)
-                # wild
+                # wilds
                 if card[1].wildIndex is not None:
                     self.wilds[card[1].wildIndex].append(index)
 
@@ -742,7 +743,7 @@ class Game():
         # remember each player's number of Cards
         self.playerCardsCounts = [7]*self.playersCount
 
-        # set the starting & next player
+        # set the starting player
         if start is None:
             self.currPlayer = np.random.randint(self.playersCount)
         else:
@@ -854,22 +855,39 @@ class Game():
         '''
 
         # timing
-        gameTimeStt = dt.datetime.now()
-        gamePerfStt = time.perf_counter()
+        self.gameTimeStt = dt.datetime.now()
+        self.gamePerfStt = time.perf_counter()
+        logg.info('\n%s started on %s', self.name, self.gameTimeStt.strftime('%Y%m%d_%H%M%S'))
 
         # iterate over players, each taking their turn
         while min(self.playerCardsCounts) > 0:
             self.playOne()
 
         # timing
-        gameTimeStp = dt.datetime.now()
-        gamePerfStp = time.perf_counter()
+        self.gameTimeStp = dt.datetime.now()
+        self.gamePerfStp = time.perf_counter()
+        
+        # summarize the game
+        self.postGameSummary()
+
+        # finish up
+        logg.info('\n%s ended on %s (%0.2f(s)): %s won in %d turns; %d cards played!',
+                  self.name, self.gameTimeStp.strftime('%Y%m%d_%H%M%S'),
+                  self.gamePerfStp - self.gamePerfStt, self.players[self.winner].name,
+                  self.playedSummaries[self.winner][1], len(self.discardPile))
+        
+        return {'timing':(self.gamePerfStp, self.gamePerfStt), 'winner':self.winner,
+                'player plaid summaries':self.playedSummaries, 'cards played':self.discardPile,
+                'played summary':self.discardSummary, 'final points':self.finalPoints,
+                'player remain summaries':self.remainSummaries}
+
 
     def rebuildDeck(self):
         '''
         Deck is too short to deal cards to player, so rebuild it.
         '''
 
+        ipdb.set_trace()
         # get discards sans top card for new deck & shuffle
         cards = self.discardPile[:-1]
         np.random.shuffle(cards)
@@ -893,9 +911,71 @@ class Game():
             player.hand.addCard(card, updateSummary=False)
 
 
+    def cardsSummarize(self, cards):
+        '''
+        Generate a summary of a collection of cards, storing the count of cards
+        by color, value, special, and wild. This also computes the points value.
+        :param cards: a collection of cards that is iterable; each card is
+            represented as a tuple of it's index in the deck and the actual card
+        '''
+
+        points = 0
+        cardCount = len(cards)
+        colors = {colr:0 for colr in range(LENCOLORS)}
+        values = {valu:0 for valu in range(LENVALUES)}
+        specials = {spec:0 for spec in range(LENSPECIALS)}
+        wilds = {wild:0 for wild in range(LENWILDS)}
+
+        if len(cards) > 0:
+            # iterate over cards in the collection
+            for card in cards:
+                # points
+                points += card[1].points
+                # colors
+                if card[1].colorIndex is not None:
+                    colors[card[1].colorIndex] += 1
+                # values
+                if card[1].valueIndex is not None:
+                    values[card[1].valueIndex] += 1
+                # specials
+                if card[1].specialIndex is not None:
+                    specials[card[1].specialIndex] += 1
+                # wilds
+                if card[1].wildIndex is not None:
+                    wilds[card[1].wildIndex] += 1
+
+        return points, cardCount, colors, values, specials, wilds
+
+    def postGameSummary(self):
+        '''
+        Summarize a game after finishing.
+        '''
+
+        # summary of all played cards: points, cardCount, colors, values, specials, wilds
+        self.discardSummary = self.cardsSummarize(self.discardPile)
+
+        # summary of played & remaining cards per player
+        # summary is: points, cardCount, colors, values, specials, wilds
+        self.finalPoints = [0]*len(self.players)
+        self.playedSummaries = [None]*len(self.players)
+        self.remainSummaries = [None]*len(self.players)
+        for (indx, player) in enumerate(self.players):
+            # points
+            self.finalPoints[indx] = player.hand.points
+            # played
+            self.playedSummaries[indx] = self.cardsSummarize(
+                player.hand.playedCards.values())
+            # remaining
+            self.remainSummaries[indx] = self.cardsSummarize(
+                player.hand.currCards.values())
+        
+        # get the winning player
+        self.winner = self.finalPoints.index(0)
+
+
 # testing code
 gameName = 'Test Game'
-logLevel = 20
+logLevel = 10 # debug
 # start logger
 sttTS = dt.datetime.now()
 loggFilName = './Uno_%s_%s.log'%(re.sub(pattern='[^a-zA-Z0-9]',
@@ -906,6 +986,7 @@ logg = getCreateLogger(name='UNO', file=loggFilName, level=logLevel)
 np.random.seed(42)
 thisGame = Game(gameName, [Player('Andrew', None), Player('Resham', None),
     Player('Ma', None)])
+results = thisGame.play()
 
 
 '''# process
