@@ -1,9 +1,4 @@
 '''
-# TODO: fix reverse when only 2 players
-# TODO: add game summary
-# TODO: send results after play()
-# TODO: add back generic card summary function in Game
-# TODO: finish play function
 # TODO: improve talking
 # TODO: test test test
 # TODO: define player strategies
@@ -450,8 +445,9 @@ class Hand():
         # update number of Cards
         self.cardCount = len(self.currCards)
 
-        # update the summary
+        # update the summaries
         self.__handSummarize__()
+        self.__playedSummarize__()
 
         return this, self.cardCount
 
@@ -509,7 +505,6 @@ class Hand():
                 prt += '\nCard %d = %r'%(index, card)
 
         return prt
-
 
     def __playedSummarize__(self):
         '''
@@ -683,7 +678,6 @@ class Player():
                 # can we place a skip or reverse to play an extra card
                 if (sameColorSpecial > 0) & (sameColor > 1) &\
                     (thisGame.playersCount == 2):
-                    ipdb.set_trace()
                     # get any skips or reverses, then take the first if extant
                     playMe = [(handIndx, card) for (handIndx, card)
                               in sameColorSpecialPlay if card[1].specialIndex < 2]
@@ -820,12 +814,13 @@ class Game():
 
         # handle special cards on the discard pile
         if self.currSpecial is not None:
-            if SPECIALS[self.currSpecial] == 'rev':
-                # reverse - change direction
-                self.playersOrder *= -1
-            elif SPECIALS[self.currSpecial] == 'skp':
+            if (SPECIALS[self.currSpecial] == 'skp') |\
+                ((SPECIALS[self.currSpecial] == 'rev') & (self.playersCount == 2)):
                 # skip - pretend current is next
                 curr += 1
+            elif SPECIALS[self.currSpecial] == 'rev':
+                # reverse - change direction
+                self.playersOrder *= -1
 
         # set the next player
         nxt = (curr + self.playersOrder) % self.playersCount
@@ -851,7 +846,10 @@ class Game():
             self.currColor = card[1].colorIndex
         else:
             self.currColor = colorIndex
-        logg.debug('\nCurrent color = %s', COLORS[self.currColor])
+        if self.currColor is not None:
+            logg.debug('\nCurrent color = %s', COLORS[self.currColor])
+        else:
+            logg.debug('\nNo current color')
         # define current special & value
         self.currSpecial = card[1].specialIndex
         self.currValue = card[1].valueIndex
@@ -887,17 +885,18 @@ class Game():
         self.nextPlayer = self.__nextPlayer__()
         # set the new current player
         self.currPlayer = self.nextPlayer
-        # talk about all player's card counts & points
+        # talk about all players' card counts & points
         status = '; '.join(['%s has %d cards worth %d points'%\
                             (player.name, player.hand.cardCount, player.hand.points)
                             for player in self.players])
         logg.info('\n'+status)
 
-
     def play(self):
         '''
         Let's play Uno!.
-        :return results: dictionary of some summary results
+        :return results: dictionary of some summary results with keys 'timing',
+            'winner', 'played summary', 'player remaining summary', 'player played summary',
+            and 'random seed'.
         '''
 
         # timing
@@ -909,12 +908,26 @@ class Game():
         while min(self.playerCardsCounts) > 0:
             self.playOne()
 
+        # post-game summary
+        self.postGameSummary()
+        logg.info('\n%s won!', self.players[self.winner].name)
+
         # timing
         self.gameTimeStp = dt.datetime.now()
         self.gamePerfStp = time.perf_counter()
 
-        return {'timing':(self.gamPerfStt, self.gamePerfStp)}
-    
+        # talk
+        logg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
+                  self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
+                  self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
+                  len(self.discardPile)-1)
+
+        return {'timing':(self.gameTimeStt, self.gamePerfStt, self.gameTimeStp,
+                          self.gamePerfStp), 'winner':self.winner,
+                          'discard summary':self.discardSummary,
+                          'player remaining summary':self.playerRemain,
+                          'player played summary':self.playerPlayed,
+                          'random seed':rndSeed}
 
     def rebuildDeck(self):
         '''
@@ -944,7 +957,6 @@ class Game():
                 player.hand.addCard(card, updateSummary=False)
             player.hand.addCard(card, updateSummary=False)
 
-
     def cardsSummary(self, cards):
         '''
         Generate a summary of a collection of cards, storing the count of cards
@@ -970,7 +982,7 @@ class Game():
 
         if cardCount > 0:
             # iterate over cards in the hand now
-            for (index, card) in cards:
+            for card in cards:
                 # points
                 points += card[1].points
                 # colors
@@ -988,44 +1000,43 @@ class Game():
 
         return cardCount, points, colors, values, specials, wilds
 
-
     def postGameSummary(self):
         '''
         Summarize a game after finishing
         '''
 
-        # get the final points for all players
-        self.playerPoints = [player for player in self.players]
-
         # summary of all played cards
-        self.playedSummary = self.cardsSummary(self.discardPile)
+        self.discardSummary = self.cardsSummary(self.discardPile)
 
-        # summaries by player
-        self.playerPoints = [0]*len(self.players)
+        # summaries by player: cardCount, points, colors, values, specials, wilds
         self.playerPlayed = [None]*len(self.players)
         self.playerRemain = [None]*len(self.players)
         for (indx, player) in enumerate(self.players):
-            # remaining points
-            self.playerPoints[indx] = player.hand.points
             # played cards
-            self.playerPlayed[indx] = self.cardsSummary(player.hand.playedCards)
+            self.playerPlayed[indx] = self.cardsSummary(player.hand.playedCards.values())
             # remaining cards
-            self.playerRemain[indx] = self.cardsSummary(player.hand.currCards)
+            self.playerRemain[indx] = self.cardsSummary(player.hand.currCards.values())
+            # winner
+            if self.playerRemain[indx][0] == 0:
+                self.winner = indx
 
 
-# testing code
-gameName = 'Test Game'
-logLevel = 20
-# start logger
+# setup a game
 sttTS = dt.datetime.now()
+logLevel = 20
+gameName = 'Test Game'
+players = [Player('Andrew', None), Player('Resham', None)]#, Player('Ma', None)]
+#rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second
+rndSeed = None
+
+# start logger
 loggFilName = './Uno_%s_%s.log'%(re.sub(pattern='[^a-zA-Z0-9]',
                                         repl='_', string=gameName),
                                         sttTS.strftime('%Y%m%d_%H%M%S'))
+print('Logging game to %s', loggFilName)
 logg = getCreateLogger(name='UNO', file=loggFilName, level=logLevel)
-# setup the game
-rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second
-thisGame = Game(gameName, [Player('Andrew', None), Player('Resham', None),
-    Player('Ma', None)], 0, rndSeed)
+# run the game
+thisGame = Game(gameName, players, 0, rndSeed)
 results = thisGame.play()
 
 
