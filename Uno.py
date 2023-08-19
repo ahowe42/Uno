@@ -1,4 +1,7 @@
 '''
+# TODO: card __str_- not showing special or wild index
+# TODO: add serializing results
+# TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
 # TODO: define player strategies
@@ -219,7 +222,7 @@ class Deck():
         :param cards: optional (default=None) list of cards for this deck; if
             None, the deck is built
         :param shuffle: optional (default=True) flag indicating whether or not
-            to shuffle the cards generated; only used if cards is None
+            to shuffle the cards generated
         '''
 
         if cards is None:
@@ -252,43 +255,9 @@ class Deck():
 
         # add the size count
         self.size = len(self.cards)
-        # keep track of all cards put in the deck for any resets
-        self.allCardCount = self.size
-
-        # build the placeables matrix
-        self.__buildPlacesMatrix__()
 
         # initialize the card to next come off the deck
         self.topCard = 0
-
-    def __buildPlacesMatrix__(self):
-        '''
-        Build the matrix of placeable cards, as a square matrix.
-        param cards: list of cards for which to build the matrix
-        '''
-
-        # pre-allocate the array
-        self.placeables = np.ndarray(shape=(self.size, self.size), dtype=object)
-        # iterate over cards to form the matrix - this could be made more
-        # efficient, but the matrix is only built rarely, and the duplication
-        # does not consume *so much* memory.
-        # TODO: confirm this will work corrrectly after the deck is reset
-        rng = range(self.size)
-        for row in rng:
-            for col in rng:
-                self.placeables[row, col] = self.cards[row].\
-                    canPlace(self.cards[col])
-
-    def canPlaceThis(self, this:int, that:int):
-        '''
-        Use the pre-built matrix to define if this card can be place on that
-        card.
-        :param this: index of this card in the deck
-        :param that: index of that card in the deck
-        :return result: tuple of boolean placement flag and reason
-        '''
-
-        return self.placeables[this, that]
 
     def deal(self, cards:int=1, thisGame=None):
         '''
@@ -304,9 +273,8 @@ class Deck():
             # ensure there are enough cards in the deck
             if (thisGame.discardPile is not None) & (self.size <= cards):
                 # not enough cards, so reset the deck
-                logg.info('Only %d cards, so resetting deck from discard pile',
+                logg.info('Only %d card(s), so rebuilding the deck from discard pile',
                     self.size)
-                ipdb.set_trace()
                 thisGame.rebuildDeck()
             elif self.size <= cards:
                 # this should never happen
@@ -628,15 +596,16 @@ class Player():
             5 = same color, different special
             6 = different color, same special
             '''
+
             playables = dict.fromkeys(playableCards, None)
             sameColorPlay, sameColorSpecialPlay = [], []
             diffColorPlay, wildPlay = [], []
-            #ipdb.set_trace()
+
+            # iterate over cards
             for handIndx in playableCards:
-                # get the card in the hand
+                # get the card in the hand & determine if it's placeable
                 card = self.hand.currCards[handIndx]
-                playables[handIndx] = thisGame.deck.canPlaceThis(card[0],
-                    thisGame.currCardIndex)
+                playables[handIndx] = card[1].canPlace(thisGame.deck.cards[thisGame.currCardIndex])
                 # summarize
                 # get same colors
                 if (playables[handIndx][1] in [0, 2, 3, 5]) &\
@@ -773,6 +742,7 @@ class Game():
         self.playersOrder = 1 # 1 or -1
 
         # get the Deck & put the top card on the pile
+        self.rebuilt = 0
         self.deck = Deck()
         self.discardPile = []
         self.addToDiscard(self.deck.deal(1)[0])
@@ -897,7 +867,7 @@ class Game():
         Let's play Uno!.
         :return results: dictionary of some summary results with keys 'timing',
             'winner', 'played summary', 'player remaining summary', 'player played summary',
-            and 'random seed'.
+            'random seed', and 'times rebuilt'.
         '''
 
         # timing
@@ -917,7 +887,7 @@ class Game():
         self.gameTimeStp = dt.datetime.now()
         self.gamePerfStp = time.perf_counter()
 
-        # talk
+        # talk TODO: update to handle rebuild
         logg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
                   self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
                   self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
@@ -928,35 +898,51 @@ class Game():
                           'discard summary':self.discardSummary,
                           'player remaining summary':self.playerRemain,
                           'player played summary':self.playerPlayed,
-                          'random seed':rndSeed}
+                          'random seed':rndSeed, 'times rebuilt':self.rebuilt}
 
     def rebuildDeck(self):
         '''
         Deck is too short to deal cards to player, so rebuild it.
         '''
 
-        ipdb.set_trace()
         # get discards sans top card for new deck & shuffle
+        logg.debug('\nAdding & shuffling discard pile sans top (%d)',
+                   len(self.discardPile[:-1]))
         cards = self.discardPile[:-1]
         np.random.shuffle(cards)
+        # add the remainder of the deck: 42 is just a placeholder, as it'll be stripped
+        logg.debug('\nAdding remainder of deck (%d)', self.deck.size)
+        cards.extend([(42, card) for card in self.deck.cards[-self.deck.size:]])
         # take all cards from each player *in reverse order* and add
         for player in self.players[::-1]:
+            logg.debug('\nAdding %s cards (%d)', player.name,
+                       len(player.hand.currCards))
             cards.extend(player.hand.currCards.values())
             player.hand.currCards = {}
         # add the top card
+        logg.debug('\nAdding the top discard (1)')
         cards += [self.discardPile[-1]]
+
         # create new deck object
-        self.deck = Deck(cards=[card[1] for card in cards])
+        self.deck = Deck(cards=[card[1] for card in cards[::-1]], shuffle=False)
+
         # add top card back to discard
         self.discardPile = []
+        logg.debug('\nPutting back top discard')
         self.addToDiscard(self.deck.deal(1)[0])
+
         # deal back all cards
         for (pindx, player) in enumerate(self.players):
             # get the cards dealt & add them
             cards = self.deck.deal(self.playerCardsCounts[pindx])
-            for card in cards[:-1]:
-                player.hand.addCard(card, updateSummary=False)
-            player.hand.addCard(card, updateSummary=False)
+            logg.debug('\nAdding back %d cards to %s', len(cards), player.name)
+            for (cindx, card) in enumerate(cards):
+                summary = (cindx == self.playerCardsCounts[pindx]-1)
+                player.hand.addCard(card, updateSummary=summary)
+        
+        # increment the rebuilt counter
+        logg.info('\nDeck rebuilt')
+        self.rebuilt += 1
 
     def cardsSummary(self, cards):
         '''
@@ -1006,7 +992,7 @@ class Game():
         Summarize a game after finishing
         '''
 
-        # summary of all played cards
+        # summary of all played cards TODO: update to handle rebuild
         self.discardSummary = self.cardsSummary(self.discardPile)
 
         # summaries by player: cardCount, points, colors, values, specials, wilds
@@ -1023,27 +1009,28 @@ class Game():
 
 
 # setup
-logLevel = 20
+logLevel = 10 # DEBUG+
 
 # Monte Carlo simulation
-MCSims = 10
+MCSims = 1
 allResults = [None]*MCSims
 for indx in range(MCSims):
     # talk
     print('Game %d of %d'%(indx+1, MCSims))
+
     # setup a game
     sttTS = dt.datetime.now()
     gameDescrip = 'Test Game'
     logGameName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
         '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
     players = [Player('Andrew', None), Player('Resham', None), Player('Ma', None)]
-    #rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second + sttTS.microsecond
-    rndSeed = None
+    rndSeed = 794379
 
     # start logger
     loggFilName = './%s.log'%logGameName
     print('Logging game to %s', loggFilName)
     logg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
+
     # run the game
     thisGame = Game(logGameName, players, 0, rndSeed)
     allResults[indx] = thisGame.play()
