@@ -141,13 +141,14 @@ class Card():
             self.name += SPECIALSWILDS[specialWild]
         else:
             self.name += str(self.valueIndex)
+        self.name += ' (%s)'%self.points
 
     def __str__(self):
         return self.name
 
     def __repr__(self):
-        return 'Card(%r, %r, %r, %s, %d)'%(self.colorIndex, self.valueIndex,
-            self.specialWildIndex, self.name, self.points)
+        return 'Card(%r, %r, %r, %r, %s, %d)'%(self.colorIndex, self.valueIndex,
+            self.specialIndex, self.wildIndex, self.name, self.points)
 
     def __eq__(self, other):
         return (self.colorIndex == other.colorIndex) &\
@@ -431,7 +432,7 @@ class Hand():
         # iterate and print cards
         prt = 'Current Hand Points = %d'%self.points
         for (index, card) in self.currCards.items():
-            prt += '\nCard %d = %r'%(index, card)
+            prt += '\nCard %d = %s'%(index, card)
 
         # maybe show the summary
         if summary:
@@ -441,7 +442,7 @@ class Hand():
                 if len(self.colors[colorIndex]) > 0:
                     prt += '\nColor = ' + COLORS[colorIndex]
                     for card in cards:
-                        prt += '\n\tCard %d = %r'%(card, self.currCards[card])
+                        prt += '\n\tCard %d = %s'%(card, self.currCards[card])
             # values
             for (valueIndex, cards) in self.values.items():
                 if len(self.values[valueIndex]) > 0:
@@ -453,13 +454,13 @@ class Hand():
                 if len(self.specials[specialIndex]) > 0:
                     prt += '\nSpecial = ' + SPECIALS[specialIndex]
                     for card in cards:
-                        prt += '\n\tCard %d = %r'%(card, self.currCards[card])
+                        prt += '\n\tCard %d = %s'%(card, self.currCards[card])
             # wilds
             for (wildIndex, cards) in self.wilds.items():
                 if len(self.wilds[wildIndex]) > 0:
                     prt += '\nWild = ' + WILDS[wildIndex]
                     for card in cards:
-                        prt += '\n\tCard %d = %r'%(card, self.currCards[card])
+                        prt += '\n\tCard %d = %s'%(card, self.currCards[card])
             # show the stackables
             prt += '\nStackable Matrix\n%s'%\
                 np.array([str(s[0])[0] for s in
@@ -470,7 +471,7 @@ class Hand():
         if played & (self.playedCards != {}):
             prt += '\nPlayed Cards'
             for (index, card) in self.playedCards.items():
-                prt += '\nCard %d = %r'%(index, card)
+                prt += '\nCard %d = %s'%(index, card)
 
         return prt
 
@@ -622,7 +623,7 @@ class Player():
                 if playables[handIndx][1] in [4, 6]:
                     diffColorPlay.append((handIndx, card))
                 # talk
-                logg.debug('\nPlayable %d = (%d, %r): reason = %d', handIndx,
+                logg.debug('\nPlayable %d = (%d, %s): reason = %d', handIndx,
                     *self.hand.currCards[handIndx], playables[handIndx][1])
             # summarize the summary
             sameColor = len(sameColorPlay)
@@ -770,7 +771,7 @@ class Game():
         logg.info('\n%s initialized with players', self.name)
         for player in self.players:
             logg.info(player)
-        logg.info('\nInitial discard card = (%d = %r)', *self.discardPile[0])
+        logg.info('\nInitial discard card = (%d = %s)', *self.discardPile[0])
         logg.info('\n%s goes first', self.players[self.currPlayer].name)
 
     def __nextPlayer__(self):
@@ -807,7 +808,7 @@ class Game():
         '''
         # add
         self.discardPile.append(card)
-        logg.debug('\n(%d, %r) added to discard', *card)
+        logg.debug('\n(%d, %s) added to discard', *card)
 
         # define the deck index of the current card
         self.currCardIndex = card[0]
