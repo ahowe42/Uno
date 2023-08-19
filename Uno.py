@@ -761,7 +761,8 @@ class Game():
         # set the random state
         if rndSeed is None:
             rndSeed = dt.datetime.now()
-            rndSeed = rndSeed.hour*10000 + rndSeed.minute*100 + rndSeed.second
+            rndSeed = rndSeed.hour*10000 + rndSeed.minute*100 + rndSeed.second +\
+                rndSeed.microsecond
         self.rndSeed = rndSeed
         np.random.seed(rndSeed)
 
@@ -1025,16 +1026,16 @@ class Game():
 sttTS = dt.datetime.now()
 logLevel = 20
 gameName = 'Test Game'
-players = [Player('Andrew', None), Player('Resham', None)]#, Player('Ma', None)]
-#rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second
+players = [Player('Andrew', None), Player('Resham', None), Player('Ma', None)]
+#rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second + sttTS.microsecond
 rndSeed = None
 
 # start logger
-loggFilName = './Uno_%s_%s.log'%(re.sub(pattern='[^a-zA-Z0-9]',
-                                        repl='_', string=gameName),
-                                        sttTS.strftime('%Y%m%d_%H%M%S'))
+logName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameName) +\
+    '_' + sttTS.strftime('%Y%m%d_%H%M%S')
+loggFilName = './%s.log'%logName
 print('Logging game to %s', loggFilName)
-logg = getCreateLogger(name='UNO', file=loggFilName, level=logLevel)
+logg = getCreateLogger(name=logName, file=loggFilName, level=logLevel)
 # run the game
 thisGame = Game(gameName, players, 0, rndSeed)
 results = thisGame.play()
