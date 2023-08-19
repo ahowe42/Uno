@@ -1022,23 +1022,31 @@ class Game():
                 self.winner = indx
 
 
-# setup a game
-sttTS = dt.datetime.now()
+# setup
 logLevel = 20
-gameName = 'Test Game'
-players = [Player('Andrew', None), Player('Resham', None), Player('Ma', None)]
-#rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second + sttTS.microsecond
-rndSeed = None
 
-# start logger
-logName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameName) +\
-    '_' + sttTS.strftime('%Y%m%d_%H%M%S')
-loggFilName = './%s.log'%logName
-print('Logging game to %s', loggFilName)
-logg = getCreateLogger(name=logName, file=loggFilName, level=logLevel)
-# run the game
-thisGame = Game(gameName, players, 0, rndSeed)
-results = thisGame.play()
+# Monte Carlo simulation
+MCSims = 10
+allResults = [None]*MCSims
+for indx in range(MCSims):
+    # talk
+    print('Game %d of %d'%(indx+1, MCSims))
+    # setup a game
+    sttTS = dt.datetime.now()
+    gameDescrip = 'Test Game'
+    logGameName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
+        '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
+    players = [Player('Andrew', None), Player('Resham', None), Player('Ma', None)]
+    #rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second + sttTS.microsecond
+    rndSeed = None
+
+    # start logger
+    loggFilName = './%s.log'%logGameName
+    print('Logging game to %s', loggFilName)
+    logg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
+    # run the game
+    thisGame = Game(logGameName, players, 0, rndSeed)
+    allResults[indx] = thisGame.play()
 
 
 '''# process
