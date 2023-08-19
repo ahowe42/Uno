@@ -1,4 +1,8 @@
 '''
+# TODO: fix reverse when only 2 players
+# TODO: add game summary
+# TODO: send results after play()
+# TODO: add back generic card summary function in Game
 # TODO: finish play function
 # TODO: improve talking
 # TODO: test test test
@@ -682,7 +686,7 @@ class Player():
                     ipdb.set_trace()
                     # get any skips or reverses, then take the first if extant
                     playMe = [(handIndx, card) for (handIndx, card)
-                              in sameColorSpecialPlay if card.specialIndex < 2]
+                              in sameColorSpecialPlay if card[1].specialIndex < 2]
                     if len(playMe) > 0:
                         bestCard = playMe[0][0]
                         logg.debug('\n2 players, play same color: %s', playMe[0][1][1])
@@ -750,14 +754,22 @@ class Player():
             thisGame.players[thisGame.currPlayer].name, self.hand.cardCount, self.hand.points)
 
 class Game():
-    def __init__(self, descrip:str, players:list, start:int=0):
+    def __init__(self, descrip:str, players:list, start:int=0, rndSeed:int=None):
         '''
         Initialize a game of Uno.
         :parm descrip: string description of game
         :param players: list of player objects
         :param start: optional (default=None) index of starting player; if not
             provided, starter is randomly selected
+        :param rndSeed: optional (default=None) seed for numpy prng
         '''
+
+        # set the random state
+        if rndSeed is None:
+            rndSeed = dt.datetime.now()
+            rndSeed = rndSeed.hour*10000 + rndSeed.minute*100 + rndSeed.second
+        self.rndSeed = rndSeed
+        np.random.seed(rndSeed)
 
         # get inputs & set players data
         self.name = descrip
@@ -885,19 +897,23 @@ class Game():
     def play(self):
         '''
         Let's play Uno!.
+        :return results: dictionary of some summary results
         '''
 
         # timing
-        gameTimeStt = dt.datetime.now()
-        gamePerfStt = time.perf_counter()
+        self.gameTimeStt = dt.datetime.now()
+        self.gamePerfStt = time.perf_counter()
+        logg.debug('\n%s started on %s', self.name, self.gameTimeStt.isoformat()[:16])
 
         # iterate over players, each taking their turn
         while min(self.playerCardsCounts) > 0:
             self.playOne()
 
         # timing
-        gameTimeStp = dt.datetime.now()
-        gamePerfStp = time.perf_counter()
+        self.gameTimeStp = dt.datetime.now()
+        self.gamePerfStp = time.perf_counter()
+
+        return {'timing':(self.gamPerfStt, self.gamePerfStp)}
 
     def rebuildDeck(self):
         '''
@@ -952,9 +968,10 @@ loggFilName = './Uno_%s_%s.log'%(re.sub(pattern='[^a-zA-Z0-9]',
                                         sttTS.strftime('%Y%m%d_%H%M%S'))
 logg = getCreateLogger(name='UNO', file=loggFilName, level=logLevel)
 # setup the game
-np.random.seed(42)
+rndSeed = sttTS.hour*10000 + sttTS.minute*100 + sttTS.second
 thisGame = Game(gameName, [Player('Andrew', None), Player('Resham', None),
-    Player('Ma', None)])
+    Player('Ma', None)], 0, rndSeed)
+results = thisGame.play()
 
 
 '''# process
