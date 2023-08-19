@@ -340,7 +340,7 @@ class Hand():
         '''
 
         # initialize the hand
-        self.currCards = OrderedDict
+        self.currCards = OrderedDict()
         self.playedCards = OrderedDict()
         self.nextIndex = 0
 
@@ -914,6 +914,7 @@ class Game():
         self.gamePerfStp = time.perf_counter()
 
         return {'timing':(self.gamPerfStt, self.gamePerfStp)}
+    
 
     def rebuildDeck(self):
         '''
@@ -943,6 +944,51 @@ class Game():
                 player.hand.addCard(card, updateSummary=False)
             player.hand.addCard(card, updateSummary=False)
 
+
+    def cardsSummary(self, cards):
+        '''
+        Generate a summary of a collection of cards, storing the count of cards
+        in colors, values, specials, and wilds (all index-based) dicts. This also
+        computes the points value for the hand and the total number of cards.
+        :param cards: iterable of cards, as represented by a tuple of deck index
+            and actual card
+        :return cardCount: number of cards in collection
+        :return points: total number of points
+        :return colors: color index-keyed dict of card counts
+        :return values: value index-keyed dict of card counts
+        :return specials: special index-keyed dict of card counts
+        :return wilds: wild index-keyed dict of card counts
+        '''
+
+        # init
+        cardCount = len(cards)
+        points = 0
+        colors = {colr:0 for colr in range(LENCOLORS)}
+        values = {valu:0 for valu in range(LENVALUES)}
+        specials = {spec:0 for spec in range(LENSPECIALS)}
+        wilds = {wild:0 for wild in range(LENWILDS)}
+
+        if cardCount > 0:
+            # iterate over cards in the hand now
+            for (index, card) in cards:
+                # points
+                points += card[1].points
+                # colors
+                if card[1].colorIndex is not None:
+                    colors[card[1].colorIndex] += 1
+                # values
+                if card[1].valueIndex is not None:
+                    values[card[1].valueIndex] += 1
+                # specials
+                if card[1].specialIndex is not None:
+                    specials[card[1].specialIndex] += 1
+                # wild
+                if card[1].wildIndex is not None:
+                    wilds[card[1].wildIndex] += 1
+
+        return cardCount, points, colors, values, specials, wilds
+
+
     def postGameSummary(self):
         '''
         Summarize a game after finishing
@@ -952,10 +998,19 @@ class Game():
         self.playerPoints = [player for player in self.players]
 
         # summary of all played cards
-        self.discardPile
+        self.playedSummary = self.cardsSummary(self.discardPile)
 
-        # summary of played cards per player
-        self.players[indx].hand.__playedSummarize__()
+        # summaries by player
+        self.playerPoints = [0]*len(self.players)
+        self.playerPlayed = [None]*len(self.players)
+        self.playerRemain = [None]*len(self.players)
+        for (indx, player) in enumerate(self.players):
+            # remaining points
+            self.playerPoints[indx] = player.hand.points
+            # played cards
+            self.playerPlayed[indx] = self.cardsSummary(player.hand.playedCards)
+            # remaining cards
+            self.playerRemain[indx] = self.cardsSummary(player.hand.currCards)
 
 
 # testing code
