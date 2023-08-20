@@ -1,5 +1,4 @@
 '''
-# TODO: add serializing results
 # TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
@@ -855,10 +854,11 @@ class Game():
                                                                updateSummary=(indx==3))
         # take the turn
         self.players[self.currPlayer].takeTurn(self)
-        # set the next player
-        self.nextPlayer = self.__nextPlayer__()
-        # set the new current player
-        self.currPlayer = self.nextPlayer
+        # set the next player if nobody won
+        if min(self.playerCardsCounts) > 0:
+            self.nextPlayer = self.__nextPlayer__()
+            # set the new current player
+            self.currPlayer = self.nextPlayer
         # talk about all players' card counts & points
         status = '; '.join(['%s has %d cards worth %d points'%\
                             (player.name, player.hand.cardCount, player.hand.points)
