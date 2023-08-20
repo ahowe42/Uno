@@ -1,5 +1,4 @@
 '''
-# TODO: card __str_- not showing special or wild index
 # TODO: add serializing results
 # TODO: setup to run from command line with args
 # TODO: improve talking
@@ -16,6 +15,8 @@ import numpy as np
 import ipdb
 import re
 from collections import OrderedDict
+import pickle
+
 
 
 # globals
@@ -744,6 +745,7 @@ class Game():
 
         # get the Deck & put the top card on the pile
         self.rebuilt = 0
+        self.rebuiltCards = []
         self.deck = Deck()
         self.discardPile = []
         self.addToDiscard(self.deck.deal(1)[0])
@@ -888,11 +890,11 @@ class Game():
         self.gameTimeStp = dt.datetime.now()
         self.gamePerfStp = time.perf_counter()
 
-        # talk TODO: update to handle rebuild
+        # talk
         logg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
                   self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
                   self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
-                  len(self.discardPile)-1)
+                  self.discardSummary[0])
 
         return {'timing':(self.gameTimeStt, self.gamePerfStt, self.gameTimeStp,
                           self.gamePerfStp), 'winner':self.winner,
@@ -905,6 +907,10 @@ class Game():
         '''
         Deck is too short to deal cards to player, so rebuild it.
         '''
+
+        # update the rebuildt counters
+        self.rebuiltCards.extend(self.discardPile[:-1])
+        self.rebuilt += 1
 
         # get discards sans top card for new deck & shuffle
         logg.debug('\nAdding & shuffling discard pile sans top (%d)',
@@ -941,9 +947,8 @@ class Game():
                 summary = (cindx == self.playerCardsCounts[pindx]-1)
                 player.hand.addCard(card, updateSummary=summary)
         
-        # increment the rebuilt counter
+        # talk
         logg.info('\nDeck rebuilt')
-        self.rebuilt += 1
 
     def cardsSummary(self, cards):
         '''
@@ -993,8 +998,8 @@ class Game():
         Summarize a game after finishing
         '''
 
-        # summary of all played cards TODO: update to handle rebuild
-        self.discardSummary = self.cardsSummary(self.discardPile)
+        # summary of all played cards
+        self.discardSummary = self.cardsSummary(self.discardPile + self.rebuiltCards)
 
         # summaries by player: cardCount, points, colors, values, specials, wilds
         self.playerPlayed = [None]*len(self.players)
@@ -1028,13 +1033,19 @@ for indx in range(MCSims):
     rndSeed = 794379
 
     # start logger
-    loggFilName = './%s.log'%logGameName
+    loggFilName = './output/%s.log'%logGameName
     print('Logging game to %s', loggFilName)
     logg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
 
     # run the game
     thisGame = Game(logGameName, players, 0, rndSeed)
     allResults[indx] = thisGame.play()
+
+    # serialize results
+    filName = loggFilName[:-4] + '.p'
+    pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
+                file=open(filName, 'wb'))
+    logg.info('\nResults serialized to %s', filName)
 
 
 '''# process
