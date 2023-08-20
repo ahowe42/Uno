@@ -4,6 +4,9 @@
 # TODO: test test test
 # TODO: define player strategies
 # TODO: add games running with multiprocessing
+with multiprocessing.Pool() as pool:
+    for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
+        results[indx] = expd
 '''
 from itertools import product
 import logging
@@ -513,7 +516,7 @@ class Player():
         '''
         Define an Uno player.
         :param name: string name of player
-        :param strategy: TBD strategy of player
+        :param strategy: callable implementing player's strategy
         :param hand: optional (default=None) Hand object for player
         '''
         self.name = name
@@ -639,57 +642,12 @@ class Player():
                        wildPlay, diffColorPlay)
 
             ''' now determine the best card to play '''
-            bestCard = None
-            bestColor = None
+            # execute the strategy
+            bestCard, bestColor = self.strategy(self, thisGame,
+                                                sameColorPlay, sameColorSpecialPlay,
+                                                wildPlay, diffColorPlay)
 
-            # for now implement "prefer finish current color"
-            #ipdb.set_trace()
-            if (sameColor > 0) | (sameColorSpecial > 0):
-                # can we place a skip or reverse to play an extra card
-                if (sameColorSpecial > 0) & (sameColor > 1) &\
-                    (thisGame.playersCount == 2):
-                    # get any skips or reverses, then take the first if extant
-                    playMe = [(handIndx, card) for (handIndx, card)
-                              in sameColorSpecialPlay if card[1].specialIndex < 2]
-                    if len(playMe) > 0:
-                        bestCard = playMe[0][0]
-                        logg.debug('\n2 players, play same color: %s', playMe[0][1][1])
-                    else:
-                        # can't get an extra turn :-(
-                        pass
-                elif sameColorSpecial > 0:
-                    # get the first same color special card to play
-                    playMe = [(handIndx, card) for (handIndx, card) in sameColorSpecialPlay]
-                    bestCard = playMe[0][0]
-                    logg.debug('\nPlay same color special: %s', playMe[0][1][1])
-                else:
-                    # just play a same color number card
-                    playMe = [(handIndx, card) for (handIndx, card) in sameColorPlay]
-                    playMe.sort(key=lambda x: x[1][1].points)
-                    bestCard = playMe[-1][0]
-                    logg.debug('\nPlay same color: %s', playMe[-1][1][1])
-            elif wilds > 0:
-                # get the first wild card to play
-                playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
-                playMe.sort(key=lambda x: x[1][1].points)
-                bestCard = playMe[-1][0]
-                logg.debug('\nPlay wild: %s', playMe[-1][1][1])
-                # choose the color - the color with the most cards
-                bestColor = self.hand.colorOrders[0]
-            # TODO: if just choosing a different color to play, and there are multiple colors possible
-            # shouldn't we check both points on the cards & also number of cards of each color possible?
-            elif diffColor > 0:
-                # get the first different color card to play
-                playMe = [(handIndx, card) for (handIndx, card) in diffColorPlay]
-                playMe.sort(key=lambda x: x[1][1].points)
-                bestCard = playMe[-1][0]
-                logg.debug('\nPlay different color: %s', playMe[-1][1][1])
-            else:
-                # should not happen
-                logg.debug('\nNo card to play - impossible?!')
-                ipdb.set_trace()
-
-            # just pick the highest value playable card - also should not happen
+            # just pick the highest value playable card - should not happen
             if bestCard is None:
                 playMe = [(handIndx, self.hand.currCards[handIndx]) for handIndx
                           in playables.keys()]
@@ -1014,11 +972,85 @@ class Game():
                 self.winner = indx
 
 
+def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
+                               sameColorSpecialPlay, wildPlay, diffColorPlay):
+    '''
+    Implemennt the "finish current color" strategy
+    :param thisPlayer: current player
+    :param thisGame: current game
+    :param sameColorPlay: list of (hand index, card) playable same color value cards
+    :param sameColorSpecialPlay: list of (hand index, card) playable same color
+        special cards
+    :param wildPlay: list of (hand index, card) playable wild cards
+    :param diffColorPlay: list of (hand index, card) playable different color
+        value cards
+    :return bestCard: integer index into the hand of the best playable card
+    :return bestColor: integer color index of the color to set if wild played; 
+        None if wild not played
+    '''
+
+    bestCard = bestColor = None
+
+    # count the cards in each bin
+    sameColor = len(sameColorPlay)
+    sameColorSpecial = len(sameColorSpecialPlay)
+    wilds = len(wildPlay)
+    diffColor = len(diffColorPlay)
+
+    # choose the best color
+    if (sameColor > 0) | (sameColorSpecial > 0):
+        # can we place a skip or reverse to play an extra card
+        if (sameColorSpecial > 0) & (sameColor > 1) &\
+            (thisGame.playersCount == 2):
+            # get any skips or reverses, then take the first if extant
+            playMe = [(handIndx, card) for (handIndx, card)
+                        in sameColorSpecialPlay if card[1].specialIndex < 2]
+            if len(playMe) > 0:
+                bestCard = playMe[0][0]
+                logg.debug('\n2 players, play same color: %s', playMe[0][1][1])
+            else:
+                # can't get an extra turn :-(
+                pass
+        elif sameColorSpecial > 0:
+            # get the first same color special card to play
+            playMe = [(handIndx, card) for (handIndx, card) in sameColorSpecialPlay]
+            bestCard = playMe[0][0]
+            logg.debug('\nPlay same color special: %s', playMe[0][1][1])
+        else:
+            # just play a same color number card
+            playMe = [(handIndx, card) for (handIndx, card) in sameColorPlay]
+            playMe.sort(key=lambda x: x[1][1].points)
+            bestCard = playMe[-1][0]
+            logg.debug('\nPlay same color: %s', playMe[-1][1][1])
+    elif wilds > 0:
+        # get the first wild card to play
+        playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
+        playMe.sort(key=lambda x: x[1][1].points)
+        bestCard = playMe[-1][0]
+        logg.debug('\nPlay wild: %s', playMe[-1][1][1])
+        # choose the color - the color with the most cards
+        bestColor = thisPlayer.hand.colorOrders[0]
+    # TODO: if just choosing a different color to play, and there are multiple colors possible
+    # shouldn't we check both points on the cards & also number of cards of each color possible?
+    elif diffColor > 0:
+        # get the first different color card to play
+        playMe = [(handIndx, card) for (handIndx, card) in diffColorPlay]
+        playMe.sort(key=lambda x: x[1][1].points)
+        bestCard = playMe[-1][0]
+        logg.debug('\nPlay different color: %s', playMe[-1][1][1])
+    else:
+        # should not happen
+        logg.debug('\nNo card to play - impossible?!')
+        ipdb.set_trace()
+
+    return bestCard, bestColor
+
+
 # setup
 logLevel = 10 # DEBUG+
 
 # Monte Carlo simulation
-MCSims = 1
+MCSims = 100
 allResults = [None]*MCSims
 for indx in range(MCSims):
     # talk
@@ -1029,8 +1061,11 @@ for indx in range(MCSims):
     gameDescrip = 'Test Game'
     logGameName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
         '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
-    players = [Player('Andrew', None), Player('Resham', None), Player('Ma', None)]
-    rndSeed = 794379
+    players = [Player('Andrew', strategy=stratFinishCurrentColor),
+               Player('Resham', strategy=stratFinishCurrentColor),
+               Player('Ma', strategy=stratFinishCurrentColor)]
+    #rndSeed = 794379
+    rndSeed = None
 
     # start logger
     loggFilName = './output/%s.log'%logGameName
@@ -1046,9 +1081,3 @@ for indx in range(MCSims):
     pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
                 file=open(filName, 'wb'))
     logg.info('\nResults serialized to %s', filName)
-
-
-'''# process
-with multiprocessing.Pool() as pool:
-    for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
-        results[indx] = expd'''
