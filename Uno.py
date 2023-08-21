@@ -18,6 +18,9 @@ import ipdb
 import re
 from collections import OrderedDict
 import pickle
+import pandas as pd
+
+pd.set_option('display.max_columns', None)
 
 
 
@@ -716,7 +719,9 @@ class Game():
         # set the starting & next player
         if start is None:
             self.currPlayer = np.random.randint(self.playersCount)
+            self.start = self.currPlayer
         else:
+            self.start = start
             self.currPlayer = start
 
         # prepare to handle first discard card = skip;
@@ -859,7 +864,8 @@ class Game():
                           'discard summary':self.discardSummary,
                           'player remaining summary':self.playerRemain,
                           'player played summary':self.playerPlayed,
-                          'random seed':rndSeed, 'times rebuilt':self.rebuilt}
+                          'random seed':rndSeed, 'times rebuilt':self.rebuilt,
+                          'start':self.start}
 
     def rebuildDeck(self):
         '''
@@ -1046,25 +1052,34 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     return bestCard, bestColor
 
 
-# setup
-logLevel = 10 # DEBUG+
-
-# Monte Carlo simulation
-MCSims = 100
+''' EXECUTE '''
+# setup Monte Carlo simulation
+logLevel = 20 # 10=DEBUG+, 20=INFO+
+MCSims = 10
+configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass'],
+            'strats':[stratFinishCurrentColor, stratFinishCurrentColor, stratFinishCurrentColor],
+            'start':None, 'descrip':'Test Game'}]*MCSims
 allResults = [None]*MCSims
-for indx in range(MCSims):
+resultsDF = pd.DataFrame(index=range(MCSims))
+
+# timing
+MCTimeStt = dt.datetime.now()
+MCPerfStt = time.perf_counter()
+
+# run games serially
+for (indx, gameCFG) in enumerate(configs):
     # talk
     print('Game %d of %d'%(indx+1, MCSims))
 
-    # setup a game
+    # setup a game with this config
     sttTS = dt.datetime.now()
-    gameDescrip = 'Test Game'
+    gameDescrip = gameCFG['descrip']
     logGameName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
         '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
-    players = [Player('Andrew', strategy=stratFinishCurrentColor),
-               Player('Resham', strategy=stratFinishCurrentColor),
-               Player('Ma', strategy=stratFinishCurrentColor)]
-    #rndSeed = 794379
+    players = [Player(name, strat) for (name, strat) in
+               zip(gameCFG['players'], gameCFG['strats'])]
+    #rndSeed = 794379 # to test rebuilding
+    #rndSeed = 1031391 # some strategy error can't find best card
     rndSeed = None
 
     # start logger
@@ -1073,11 +1088,65 @@ for indx in range(MCSims):
     logg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
 
     # run the game
-    thisGame = Game(logGameName, players, 0, rndSeed)
+    thisGame = Game(logGameName, players, gameCFG['start'], rndSeed)
     allResults[indx] = thisGame.play()
+
+    # update the results dataframe
+    resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
+    resultsDF.loc[indx, 'num_players'] = len(players)
+    resultsDF.loc[indx, 'start'] = allResults[indx]['start']
+    resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
+    resultsDF.loc[indx, 'time'] = allResults[indx]['timing'][3] - allResults[indx]['timing'][1]
+    resultsDF.loc[indx, 'cards_played'] = allResults[indx]['discard summary'][0]
+    resultsDF.loc[indx, 'points_played'] = allResults[indx]['discard summary'][1]
+    resultsDF.loc[indx, 'wilds_played'] = allResults[indx]['discard summary'][-1][0]
+    resultsDF.loc[indx, 'wildplus4s_played'] = allResults[indx]['discard summary'][-1][1]
+    resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
+    resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
+    resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
+    # add player-specific data
+    for (pindx, _) in enumerate(players):
+        resultsDF.loc[indx, 'player%d_strat'%pindx] = gameCFG['strats'][pindx].__name__
+        resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][0]
+        resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][1]
+        resultsDF.loc[indx, 'player%d_wilds_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-1][0]
+        resultsDF.loc[indx, 'player%d_wildplus4s_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-1][1]
+        resultsDF.loc[indx, 'player%d_revs_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-2][0]
+        resultsDF.loc[indx, 'player%d_skps_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-2][1]
+        resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-2][2]
+    # add winner data again as separate featues
+    winr = allResults[indx]['winner']
+    resultsDF.loc[indx, 'winner_strat'] = gameCFG['strats'][winr].__name__
+    resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
+        ['player played summary'][winr][0]
+    resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
+        ['player played summary'][winr][1]
+    resultsDF.loc[indx, 'winner_wilds_played'] = allResults[indx]\
+        ['player played summary'][winr][-1][0]
+    resultsDF.loc[indx, 'winner_wildplus4s_played'] = allResults[indx]\
+        ['player played summary'][winr][-1][1]
+    resultsDF.loc[indx, 'winner_revs_played'] = allResults[indx]\
+        ['player played summary'][winr][-2][0]
+    resultsDF.loc[indx, 'winner_skps_played'] = allResults[indx]\
+        ['player played summary'][winr][-2][1]
+    resultsDF.loc[indx, 'winner_plus2s_played'] = allResults[indx]\
+        ['player played summary'][winr][-2][2]
 
     # serialize results
     filName = loggFilName[:-4] + '.p'
     pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
                 file=open(filName, 'wb'))
     logg.info('\nResults serialized to %s', filName)
+
+# timing
+MCTimeStp = dt.datetime.now()
+MCPerfStp = time.perf_counter()
+print('Monte Carlo simulation with %d runs completed in %s(m)'%(MCSims, (MCPerfStp - MCPerfStt)/60))
+display(resultsDF.head())
