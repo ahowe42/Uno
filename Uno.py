@@ -3,7 +3,7 @@
 # TODO: improve talking
 # TODO: test test test
 # TODO: define player strategies
-# TODO: add games running with multiprocessing
+# TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
 with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
         results[indx] = expd
@@ -893,14 +893,20 @@ class Game():
         # add the top card
         logg.debug('\nAdding the top discard (1)')
         cards += [self.discardPile[-1]]
+        # remember the current color if top card is a wild
+        if self.discardPile[-1][1].wildIndex is not None:
+            currColor = thisGame.currColor
+        else:
+            currColor = None
 
         # create new deck object
         self.deck = Deck(cards=[card[1] for card in cards[::-1]], shuffle=False)
 
-        # add top card back to discard
+        # add top card back to discard and ensure the current color is there
+        # if top card is a wild
         self.discardPile = []
         logg.debug('\nPutting back top discard')
-        self.addToDiscard(self.deck.deal(1)[0])
+        self.addToDiscard(self.deck.deal(1)[0], currColor)
 
         # deal back all cards
         for (pindx, player) in enumerate(self.players):
@@ -1054,8 +1060,8 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 
 ''' EXECUTE '''
 # setup Monte Carlo simulation
-logLevel = 20 # 10=DEBUG+, 20=INFO+
-MCSims = 100
+logLevel = 10 # 10=DEBUG+, 20=INFO+
+MCSims = 1000
 configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass'],
             'strats':[stratFinishCurrentColor, stratFinishCurrentColor, stratFinishCurrentColor],
             'start':None, 'descrip':'Test Game'}]*MCSims
@@ -1095,7 +1101,8 @@ for (indx, gameCFG) in enumerate(configs):
     resultsDF.loc[indx, 'num_players'] = len(players)
     resultsDF.loc[indx, 'start'] = allResults[indx]['start']
     resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
-    resultsDF.loc[indx, 'time'] = allResults[indx]['timing'][3] - allResults[indx]['timing'][1]
+    resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
+        allResults[indx]['timing'][1]
     resultsDF.loc[indx, 'cards_played'] = allResults[indx]['discard summary'][0]
     resultsDF.loc[indx, 'points_played'] = allResults[indx]['discard summary'][1]
     resultsDF.loc[indx, 'wilds_played'] = allResults[indx]['discard summary'][-1][0]
