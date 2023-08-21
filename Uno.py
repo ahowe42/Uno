@@ -612,7 +612,7 @@ class Player():
             for handIndx in playableCards:
                 # get the card in the hand & determine if it's placeable
                 card = self.hand.currCards[handIndx]
-                playables[handIndx] = card[1].canPlace(thisGame.deck.cards[thisGame.currCardIndex])
+                playables[handIndx] = card[1].canPlace(thisGame.discardPile[-1][1])
                 # summarize
                 # get same colors
                 if (playables[handIndx][1] in [0, 2, 3, 5]) &\
@@ -981,7 +981,7 @@ class Game():
 def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                                sameColorSpecialPlay, wildPlay, diffColorPlay):
     '''
-    Implemennt the "finish current color" strategy
+    Implement the "finish current color" strategy
     :param thisPlayer: current player
     :param thisGame: current game
     :param sameColorPlay: list of (hand index, card) playable same color value cards
@@ -1055,7 +1055,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 ''' EXECUTE '''
 # setup Monte Carlo simulation
 logLevel = 20 # 10=DEBUG+, 20=INFO+
-MCSims = 10
+MCSims = 100
 configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass'],
             'strats':[stratFinishCurrentColor, stratFinishCurrentColor, stratFinishCurrentColor],
             'start':None, 'descrip':'Test Game'}]*MCSims
@@ -1079,7 +1079,6 @@ for (indx, gameCFG) in enumerate(configs):
     players = [Player(name, strat) for (name, strat) in
                zip(gameCFG['players'], gameCFG['strats'])]
     #rndSeed = 794379 # to test rebuilding
-    #rndSeed = 1031391 # some strategy error can't find best card
     rndSeed = None
 
     # start logger
