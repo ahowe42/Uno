@@ -275,6 +275,8 @@ class Deck():
         :return dealt: list of tuple (deck index, card) of cards dealt
         '''
 
+        rebuild = False
+
         # only check for enough cards if game passed in
         if thisGame is not None:
             # ensure there are enough cards in the deck
@@ -283,19 +285,26 @@ class Deck():
                 logg.info('Only %d card(s), so rebuilding the deck from discard pile',
                     self.size)
                 thisGame.rebuildDeck()
+                rebuild = True
             elif self.size <= cards:
                 # this should never happen
                 logg.debug('Only %d cards, but discard is empty',
                     self.size)
                 raise ValueError('Not enough cards to deal')
 
+        # if deck was rebuilt, need to refer, this time, to thisGame
+        if rebuild:
+            deck = thisGame.deck
+        else:
+            deck = self
+
         # get the cards to deal
-        deal = [(indx, self.cards[indx]) for indx in range(self.topCard,
-            self.topCard + cards)]
+        deal = [(indx, deck.cards[indx]) for indx in range(deck.topCard,
+            deck.topCard + cards)]
 
         # update the topCard & size of the deck
-        self.topCard += cards
-        self.size -= cards
+        deck.topCard += cards
+        deck.size -= cards
 
         return deal
 
@@ -772,7 +781,7 @@ class Game():
         '''
         # add
         self.discardPile.append(card)
-        logg.debug('\n(%d, %s) added to discard', *card)
+        logg.debug('\n%s added to discard', card[1])
 
         # define the deck index of the current card
         self.currCardIndex = card[0]
@@ -1061,7 +1070,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 ''' EXECUTE '''
 # setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
-MCSims = 1000
+MCSims = 100
 configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass'],
             'strats':[stratFinishCurrentColor, stratFinishCurrentColor, stratFinishCurrentColor],
             'start':None, 'descrip':'Test Game'}]*MCSims
@@ -1084,7 +1093,7 @@ for (indx, gameCFG) in enumerate(configs):
         '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
     players = [Player(name, strat) for (name, strat) in
                zip(gameCFG['players'], gameCFG['strats'])]
-    #rndSeed = 794379 # to test rebuilding
+    #rndSeed = 607729
     rndSeed = None
 
     # start logger
