@@ -1049,16 +1049,35 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         playMe.sort(key=lambda x: x[1][1].points)
         bestCard = playMe[-1][0]
         logg.debug('\nPlay wild: %s', playMe[-1][1][1])
-        # choose the color - the color with the most cards
-        bestColor = thisPlayer.hand.colorOrders[0]
-    # TODO: if just choosing a different color to play, and there are multiple colors possible
-    # shouldn't we check both points on the cards & also number of cards of each color possible?
+        # choose the best color - the color with the most playable points
+        points = [0]*len(COLORS)
+        # iterate over cards and count total points
+        for card in thisPlayer.hand.currCards.values():
+            if card[1].colorIndex is not None:
+                points[card[1].colorIndex] += card[1].points
+        # get the color with the most points, then choose that color card with the most points
+        logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+                                                    for (cIndx, pts) in enumerate(points)]))
+        bestColor = np.argsort(points)[-1]
+    # choose best diff color by total playable points
     elif diffColor > 0:
-        # get the first different color card to play
-        playMe = [(handIndx, card) for (handIndx, card) in diffColorPlay]
-        playMe.sort(key=lambda x: x[1][1].points)
-        bestCard = playMe[-1][0]
-        logg.debug('\nPlay different color: %s', playMe[-1][1][1])
+        # get possible colors
+        colrs = set([card[1][1].colorIndex for card in diffColorPlay])
+        # total the cards of each color
+        points = [-1]*len(COLORS) # init to -1 so 0's can be differentiated from no cards
+        for card in thisPlayer.hand.currCards.values():
+            if (card[1].colorIndex is not None) & (card[1].colorIndex in colrs):
+                # get rid of the -1 first
+                if points[card[1].colorIndex] == -1:
+                    points[card[1].colorIndex] = 0
+                # add the points
+                points[card[1].colorIndex] += card[1].points
+        logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+                                                    for (cIndx, pts) in enumerate(points)]))
+        # get the color with the most points, then choose that color's diffColor card
+        bestColor = np.argsort(points)[-1]
+        bestCard = [card[0] for card in diffColorPlay if card[1][1].colorIndex==bestColor][0]
+        logg.debug('\nPlay different color: %s', thisPlayer.hand.currCards[bestCard][1])
     else:
         # should not happen
         logg.debug('\nNo card to play - impossible?!')
