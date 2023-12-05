@@ -687,6 +687,7 @@ class Player():
         logg.debug('\nPlayer %s now has %d cards, %d points',
             thisGame.players[thisGame.currPlayer].name, self.hand.cardCount, self.hand.points)
 
+
 class Game():
     def __init__(self, descrip:str, players:list, start:int=0, rndSeed:int=None):
         '''
@@ -994,7 +995,8 @@ class Game():
 
 
 def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
-                               sameColorSpecialPlay, wildPlay, diffColorPlay):
+                               sameColorSpecialPlay, wildPlay, diffColorPlay,
+                               hurtFirst:bool=False):
     '''
     Implement the "finish current color" strategy
     :param thisPlayer: current player
@@ -1005,6 +1007,9 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     :param wildPlay: list of (hand index, card) playable wild cards
     :param diffColorPlay: list of (hand index, card) playable different color
         value cards
+    :param hurtFirst: optional boolean (default=False) flag to indicate that a
+        draw 2 or draw 4 should be used before other options; otherwise, use 
+        them last
     :return bestCard: integer index into the hand of the best playable card
     :return bestColor: integer color index of the color to set if wild played; 
         None if wild not played
@@ -1020,7 +1025,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 
     # choose the best color
     if (sameColor > 0) | (sameColorSpecial > 0):
-        # can we place a skip or reverse to play an extra card
+        # can we place a skip or reverse to play an extra card?
         if (sameColorSpecial > 0) & (sameColor > 1) &\
             (thisGame.playersCount == 2):
             # get any skips or reverses, then take the first if extant
@@ -1033,10 +1038,20 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                 # can't get an extra turn :-(
                 pass
         elif sameColorSpecial > 0:
-            # get the first same color special card to play
             playMe = [(handIndx, card) for (handIndx, card) in sameColorSpecialPlay]
-            bestCard = playMe[0][0]
-            logg.debug('\nPlay same color special: %s', playMe[0][1][1])
+            # check if any draw 2s playable
+            draw2s = [play for play in playMe if play[1][1].specialIndex == 2]
+            if (len(draw2s) > 0) and hurtFirst:
+                # get the first draw 2
+                bestCard = draw2s[0][0]
+                logg.debug('\nPlay same color special (hurt first): %s',
+                           draw2s[0][1][1])
+            else:
+                # sort specials so draw 2s are last
+                playMe.sort(key=lambda x: x[1][1].specialIndex)
+                # get the first same color special card to play            
+                bestCard = playMe[0][0]
+                logg.debug('\nPlay same color special: %s', playMe[0][1][1])
         else:
             # just play a same color number card
             playMe = [(handIndx, card) for (handIndx, card) in sameColorPlay]
@@ -1044,11 +1059,20 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             bestCard = playMe[-1][0]
             logg.debug('\nPlay same color: %s', playMe[-1][1][1])
     elif wilds > 0:
-        # get the first wild card to play
         playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
-        playMe.sort(key=lambda x: x[1][1].points)
-        bestCard = playMe[-1][0]
-        logg.debug('\nPlay wild: %s', playMe[-1][1][1])
+        # check if any draw 4s playable
+        draw4s = [play for play in playMe if play[1][1].wildIndex == 1]
+        if (len(draw4s) > 0) and hurtFirst:
+            # get the first draw 4
+            bestCard = draw4s[0][0]
+            logg.debug('\nPlay wild (hurt first): %s', draw4s[0][1][1])
+        else:
+            # sort wilds so draw 4s are last
+            playMe.sort(key=lambda x: x[1][1].points)
+            # get the first wild to play
+            bestCard = playMe[0][0]
+            logg.debug('\nPlay wild: %s', playMe[0][1][1])
+
         # choose the best color - the color with the most playable points
         points = [0]*len(COLORS)
         # iterate over cards and count total points
@@ -1076,8 +1100,25 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                                                     for (cIndx, pts) in enumerate(points)]))
         # get the color with the most points, then choose that color's diffColor card
         bestColor = np.argsort(points)[-1]
-        bestCard = [card[0] for card in diffColorPlay if card[1][1].colorIndex==bestColor][0]
-        logg.debug('\nPlay different color: %s', thisPlayer.hand.currCards[bestCard][1])
+        playMe = [play for play in diffColorPlay if play[1][1].colorIndex==bestColor]
+        # check if any draw 2s playable
+        draw2s = [play for play in playMe if play[1][1].specialIndex == 2]
+        if (len(draw2s) > 0) & hurtFirst:
+            # get the first diff color draw 2
+            bestCard = draw2s[0][0]
+            logg.debug('\nPlay different color (hurt first): %s', draw2s[0][1][1])
+        elif (len(draw2s) > 0) & (len(draw2s) < len(playMe)) & (not hurtFirst):
+            ipdb.set_trace()
+            # there are more diff color playables than draw 2s, so drop them
+            playMe = [play for play in playMe if play[1][1].specialIndex != 2]
+            playMe.sort(key=lambda x: x[1][1].points)
+            bestCard = playMe[-1][0]
+            logg.debug('\nPlay different color: %s', playMe[-1][1][1])
+        else:
+            # not hurting first, no draw 2s, or only draw 2s available
+            playMe.sort(key=lambda x: x[1][1].points)
+            bestCard = playMe[-1][0]
+            logg.debug('\nPlay different color: %s', playMe[-1][1][1])
     else:
         # should not happen
         logg.debug('\nNo card to play - impossible?!')
