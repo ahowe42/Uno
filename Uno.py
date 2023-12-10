@@ -1017,7 +1017,8 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         use them last
     :param hailMary: optional boolean (default=False) flag to indicate that a
         player with <= 2 cards should be defended against by playing, in preference
-        order a draw 2, draw 4, 
+        order: same color draw 2 same color special, draw 4, diff color draw 2,
+        diff color special
     :return bestCard: integer index into the hand of the best playable card
     :return bestColor: integer color index of the color to set if wild played; 
         None if wild not played
@@ -1032,42 +1033,58 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     diffColor = len(diffColorPlay)
 
     # does any player have 2 or fewer cards?
-    if min(thisGame.playerCardsCounts) <= 2:
+    if (min(thisGame.playerCardsCounts) <= 2) & hailMary:
         playersLT2 = np.sum(thisGame.playerCardsCounts < 2)
         logg.info('%s players have <= 2 cards', playersLT2)
         ipdb.set_trace() # debug testing
         # determine what special / wild cards can defend
-        defenseCards = [play for play in sameColorSpecialPlay] +\
-            [play for play in wildPlay if play[1][1].wildIndex==1] +\
-            [play for play in diffColorPlay if play[1][1].specialIndex is not None]
-        revs = [play for play in defenseCards if play[1][1].specialIndex == 0]
-        skps = [play for play in defenseCards if play[1][1].specialIndex == 1]
-        draw2s = [play for play in defenseCards if play[1][1].specialIndex == 2]
-        draw4s = [play for play in defenseCards if play[1][1].wildIndex == 1]
-        logg.debug('%d cards to defend against <= 2 player', len(defenseCards))
+        sameDraw2s = [play for play in sameColorSpecialPlay if play[1][1].specialIndex == 2]
+        sameRevSkps = [play for play in sameColorSpecialPlay if play[1][1].specialIndex < 2]
+        draw4s = [play for play in wildPlay if play[1][1].wildIndex==1]
+        diffDraw2s = [play for play in diffColorPlay if play[1][1].specialIndex == 2]
+        diffRevSkps = [play for play in diffColorPlay if (play[1][1].specialIndex == 0) |\
+                       (play[1][1].specialIndex == 1)]
+        defenseCards = len(sameDraw2s) + len(sameRevSkps) + len(draw4s) +\
+            len(diffDraw2s) + len(diffRevSkps)
+
+        logg.debug('%d cards to defend against <= 2 player', defenseCards)
         # get the next player & their card count
         nxt = thisGame.nextPlayer
         nxtCards = thisGame.playerCardsCounts[nxt]
         if nxtCards >= 2:
             # next player has <= 2 cards
             logg.info('Next player has %d cards', nxtCards)
-            # preference order: draw 2, draw 4, skip / reverse
-            if len(draw2s) > 0:
-                # 
-                hurtFirst = True
-                pass
-            elif len(draw4s) > 0:
-                # 
-                hurtFirst = True
-                pass
-            elif (len(skps) > 0) | (len(revs) > 0):
-                # 
-                pass
+            # preference order: current color draw 2, skip/reverse, draw 4,
+            # other color draw 2, skip / reverse
+            if defenseCards > 0:
+                if len(sameDraw2s) > 0:
+                    # ensure draw 2 same color is played
+                    hurtFirst = True
+                    logg.debug('Setting hurtFirst to True so draw 2 is played')
+                elif len(sameRevSkps) > 0:
+                    # don't need to do anything
+                    pass
+                elif len(draw4s) > 0:
+                    # pretend no same color value cards available
+                    sameColor = 0
+                    hurtFirst = True
+                    logg.debug('Setting hurtFirst to True and ignoring same color value cards so draw 4 is played')
+                elif len(diffDraw2s) > 0:
+                    # pretend no same color value cards & no wilds; ensure draw 2 diff color is played
+                    hurtFirst = True
+                    sameColor = 0
+                    wilds = 0
+                    logg.debug('Setting hurtFirst to True and ignoring same color value cards & wilds so draw 2 is played')
+                elif len(diffRevSkps) > 0:
+                    # pretend no same color value cards & no wilds
+                    sameColor = 0
+                    wilds = 0
+                    logg.debug('Ignoring same color value cards & wilds so diff color special is played')
             else:
                 logg.debug("Can't defend against next player with %d cards", len(nxtCards))
         else:
             # someone else has <= 2 cards
-            logg.info('Unsure how to defend against another player with <= 2 cards')
+            logg.info('Unsure how to defend against non-next player with <= 2 cards')
 
 
     # choose the best card
