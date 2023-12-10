@@ -1,4 +1,6 @@
 '''
+# TODO: finish hurtFirst in current strategy (in general pass kwargs?)
+# TODO: split analysis code into new functoin
 # TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
@@ -8,6 +10,9 @@ with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
         results[indx] = expd
 '''
+''' strategy ideas: prefer finish color, switch max color,
+hurt next player, change player, wait to hurt next player,
+first blood '''
 from itertools import product
 import logging
 import time
@@ -553,10 +558,6 @@ class Player():
         :param thisGame: game this player is in
         '''
 
-        ''' strategy ideas: prefer finish color, switch max color,
-        hurt next player, change player, wait to hurt next player,
-        first blood '''
-
         # if discard started with wild, must choose the color
         if thisGame.currWild is not None:
             if thisGame.currColor is None:
@@ -995,21 +996,28 @@ class Game():
 
 
 def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
-                               sameColorSpecialPlay, wildPlay, diffColorPlay,
-                               hurtFirst:bool=False):
+                            sameColorSpecialPlay, wildPlay, diffColorPlay,
+                            hurtFirst:bool=False, hailMary:bool=False):
     '''
-    Implement the "finish current color" strategy
+    Implement the "finish current color" strategy. This will first try to play
+    two cards (if two players can use skip / reverse to get a 2nd turn). Then it
+    will try to play a special card, then a number card. Otherwise, it will try
+    to play a wild.
     :param thisPlayer: current player
     :param thisGame: current game
-    :param sameColorPlay: list of (hand index, card) playable same color value cards
+    :param sameColorPlay: list of (hand index, card) playable same color value
+        cards
     :param sameColorSpecialPlay: list of (hand index, card) playable same color
         special cards
     :param wildPlay: list of (hand index, card) playable wild cards
     :param diffColorPlay: list of (hand index, card) playable different color
-        value cards
+        cards
     :param hurtFirst: optional boolean (default=False) flag to indicate that a
-        draw 2 or draw 4 should be used before other options; otherwise, use 
-        them last
+        draw 2 or draw 4 should be used before other specials or wilds; otherwise,
+        use them last
+    :param hailMary: optional boolean (default=False) flag to indicate that a
+        player with <= 2 cards should be defended against by playing, in preference
+        order a draw 2, draw 4, 
     :return bestCard: integer index into the hand of the best playable card
     :return bestColor: integer color index of the color to set if wild played; 
         None if wild not played
@@ -1023,7 +1031,46 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     wilds = len(wildPlay)
     diffColor = len(diffColorPlay)
 
-    # choose the best color
+    # does any player have 2 or fewer cards?
+    if min(thisGame.playerCardsCounts) <= 2:
+        playersLT2 = np.sum(thisGame.playerCardsCounts < 2)
+        logg.info('%s players have <= 2 cards', playersLT2)
+        ipdb.set_trace() # debug testing
+        # determine what special / wild cards can defend
+        defenseCards = [play for play in sameColorSpecialPlay] +\
+            [play for play in wildPlay if play[1][1].wildIndex==1] +\
+            [play for play in diffColorPlay if play[1][1].specialIndex is not None]
+        revs = [play for play in defenseCards if play[1][1].specialIndex == 0]
+        skps = [play for play in defenseCards if play[1][1].specialIndex == 1]
+        draw2s = [play for play in defenseCards if play[1][1].specialIndex == 2]
+        draw4s = [play for play in defenseCards if play[1][1].wildIndex == 1]
+        logg.debug('%d cards to defend against <= 2 player', len(defenseCards))
+        # get the next player & their card count
+        nxt = thisGame.nextPlayer
+        nxtCards = thisGame.playerCardsCounts[nxt]
+        if nxtCards >= 2:
+            # next player has <= 2 cards
+            logg.info('Next player has %d cards', nxtCards)
+            # preference order: draw 2, draw 4, skip / reverse
+            if len(draw2s) > 0:
+                # 
+                hurtFirst = True
+                pass
+            elif len(draw4s) > 0:
+                # 
+                hurtFirst = True
+                pass
+            elif (len(skps) > 0) | (len(revs) > 0):
+                # 
+                pass
+            else:
+                logg.debug("Can't defend against next player with %d cards", len(nxtCards))
+        else:
+            # someone else has <= 2 cards
+            logg.info('Unsure how to defend against another player with <= 2 cards')
+
+
+    # choose the best card
     if (sameColor > 0) | (sameColorSpecial > 0):
         # can we place a skip or reverse to play an extra card?
         if (sameColorSpecial > 0) & (sameColor > 1) &\
