@@ -1,6 +1,4 @@
 '''
-# TODO: finish hurtFirst in current strategy (in general pass kwargs?)
-# TODO: split analysis code into new functoin
 # TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
@@ -10,9 +8,7 @@ with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
         results[indx] = expd
 '''
-''' strategy ideas: prefer finish color, switch max color,
-hurt next player, change player, wait to hurt next player,
-first blood '''
+''' strategy ideas: prefer finish color, switch max color '''
 from itertools import product
 import logging
 import time
@@ -533,11 +529,15 @@ class Player():
         '''
         Define an Uno player.
         :param name: string name of player
-        :param strategy: callable implementing player's strategy
+        :param strategy: dict holding 'strategy': callable implementing player's
+            strategy, 'hurtFirst': flag for callable, 'hailMary': flag for
+            callable (see strategy function)
         :param hand: optional (default=None) Hand object for player
         '''
         self.name = name
-        self.strategy = strategy
+        self.strategy = strategy['strategy']
+        self.strategyHF = strategy.get('hurtFirst', False)
+        self.strategyHM = strategy.get('hailMary', False)
         self.hand = None
 
     def __str__(self):
@@ -658,7 +658,8 @@ class Player():
             # execute the strategy
             bestCard, bestColor = self.strategy(self, thisGame,
                                                 sameColorPlay, sameColorSpecialPlay,
-                                                wildPlay, diffColorPlay)
+                                                wildPlay, diffColorPlay,
+                                                self.strategyHF, self.strategyHM)
 
             # just pick the highest value playable card - should not happen
             if bestCard is None:
@@ -1196,7 +1197,9 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 logLevel = 10 # 10=DEBUG+, 20=INFO+
 MCSims = 100
 configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass'],
-            'strats':[stratFinishCurrentColor, stratFinishCurrentColor, stratFinishCurrentColor],
+            'strats':[{'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False},
+                      {'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False},
+                      {'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False}],
             'start':None, 'descrip':'Test Game'}]*MCSims
 allResults = [None]*MCSims
 resultsDF = pd.DataFrame(index=range(MCSims))
@@ -1245,7 +1248,9 @@ for (indx, gameCFG) in enumerate(configs):
     resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
     # add player-specific data
     for (pindx, _) in enumerate(players):
-        resultsDF.loc[indx, 'player%d_strat'%pindx] = gameCFG['strats'][pindx].__name__
+        resultsDF.loc[indx, 'player%d_strat'%pindx] = gameCFG['strats'][pindx]['strategy'].__name__
+        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = gameCFG['strats'][pindx].get('hurtFirst', False)
+        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = gameCFG['strats'][pindx].get('hailMary', False)
         resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
             ['player played summary'][pindx][0]
         resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
@@ -1262,7 +1267,9 @@ for (indx, gameCFG) in enumerate(configs):
             ['player played summary'][pindx][-2][2]
     # add winner data again as separate featues
     winr = allResults[indx]['winner']
-    resultsDF.loc[indx, 'winner_strat'] = gameCFG['strats'][winr].__name__
+    resultsDF.loc[indx, 'winner_strat'] = gameCFG['strats'][winr]['strategy'].__name__
+    resultsDF.loc[indx, 'winner_stratHF'] = gameCFG['strats'][winr].get('hurtFirst', False)
+    resultsDF.loc[indx, 'winner_stratHM'] = gameCFG['strats'][winr].get('hailMary', False)
     resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
         ['player played summary'][winr][0]
     resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
