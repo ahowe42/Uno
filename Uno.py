@@ -1035,9 +1035,8 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 
     # does any player have 2 or fewer cards?
     if (min(thisGame.playerCardsCounts) <= 2) & hailMary:
-        playersLT2 = np.sum(thisGame.playerCardsCounts < 2)
+        playersLT2 = len([c for c in thisGame.playerCardsCounts if c <= 2])
         logg.info('%s players have <= 2 cards', playersLT2)
-        ipdb.set_trace() # debug testing
         # determine what special / wild cards can defend
         sameDraw2s = [play for play in sameColorSpecialPlay if play[1][1].specialIndex == 2]
         sameRevSkps = [play for play in sameColorSpecialPlay if play[1][1].specialIndex < 2]
@@ -1067,22 +1066,27 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                     pass
                 elif len(draw4s) > 0:
                     # pretend no same color value cards available
+                    ipdb.set_trace() # debug testing
                     sameColor = 0
                     hurtFirst = True
                     logg.debug('Setting hurtFirst to True and ignoring same color value cards so draw 4 is played')
                 elif len(diffDraw2s) > 0:
                     # pretend no same color value cards & no wilds; ensure draw 2 diff color is played
+                    # this might not work if the color of this card is not the max color
+                    ipdb.set_trace() # debug testing
                     hurtFirst = True
                     sameColor = 0
                     wilds = 0
                     logg.debug('Setting hurtFirst to True and ignoring same color value cards & wilds so draw 2 is played')
                 elif len(diffRevSkps) > 0:
                     # pretend no same color value cards & no wilds
+                    # this might not work if the color of this card is not the max color
+                    ipdb.set_trace() # debug testing
                     sameColor = 0
                     wilds = 0
                     logg.debug('Ignoring same color value cards & wilds so diff color special is played')
             else:
-                logg.debug("Can't defend against next player with %d cards", len(nxtCards))
+                logg.debug("Can't defend against next player with %d cards", nxtCards)
         else:
             # someone else has <= 2 cards
             logg.info('Unsure how to defend against non-next player with <= 2 cards')
@@ -1195,11 +1199,12 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 ''' EXECUTE '''
 # setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
-MCSims = 100
-configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass'],
+MCSims = 10
+configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover'],
             'strats':[{'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False},
-                      {'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False},
-                      {'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False}],
+                      {'strategy':stratFinishCurrentColor, 'hurtFirst':True, 'hailMary':False},
+                      {'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':True},
+                      {'strategy':stratFinishCurrentColor, 'hurtFirst':True, 'hailMary':True}],
             'start':None, 'descrip':'Test Game'}]*MCSims
 allResults = [None]*MCSims
 resultsDF = pd.DataFrame(index=range(MCSims))
