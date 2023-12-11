@@ -1,8 +1,9 @@
 '''
+# TODO: change strategy params to kwargs
 # TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
-# TODO: define player strategies
+# TODO: someday refactor strategies and how playable cards are passed
 # TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
 with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
@@ -656,10 +657,10 @@ class Player():
 
             ''' now determine the best card to play '''
             # execute the strategy
-            bestCard, bestColor = self.strategy(self, thisGame,
-                                                sameColorPlay, sameColorSpecialPlay,
-                                                wildPlay, diffColorPlay,
-                                                self.strategyHF, self.strategyHM)
+            bestCard, bestColor = self.strategy(self, thisGame, sameColorPlay,
+                                                sameColorSpecialPlay, wildPlay,
+                                                diffColorPlay, self.strategyHF,
+                                                self.strategyHM)
 
             # just pick the highest value playable card - should not happen
             if bestCard is None:
@@ -1089,6 +1090,251 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             # someone else has <= 2 cards
             logg.info('Unsure how to defend against non-next player with <= 2 cards')
 
+
+    # choose the best card
+    if (sameColor > 0) | (sameColorSpecial > 0):
+        # can we place a skip or reverse to play an extra card?
+        if (sameColorSpecial > 0) & (sameColor > 1) &\
+            (thisGame.playersCount == 2):
+            # get any skips or reverses, then take the first if extant
+            playMe = [(handIndx, card) for (handIndx, card)
+                        in sameColorSpecialPlay if card[1].specialIndex < 2]
+            if len(playMe) > 0:
+                bestCard = playMe[0][0]
+                logg.debug('\n2 players, play same color: %s', playMe[0][1][1])
+            else:
+                # can't get an extra turn :-(
+                pass
+        elif sameColorSpecial > 0:
+            playMe = [(handIndx, card) for (handIndx, card) in sameColorSpecialPlay]
+            # check if any draw 2s playable
+            draw2s = [play for play in playMe if play[1][1].specialIndex == 2]
+            if (len(draw2s) > 0) and hurtFirst:
+                # get the first draw 2
+                bestCard = draw2s[0][0]
+                logg.debug('\nPlay same color special (hurt first): %s',
+                           draw2s[0][1][1])
+            else:
+                # sort specials so draw 2s are last
+                playMe.sort(key=lambda x: x[1][1].specialIndex)
+                # get the first same color special card to play            
+                bestCard = playMe[0][0]
+                logg.debug('\nPlay same color special: %s', playMe[0][1][1])
+        else:
+            # just play a same color number card
+            playMe = [(handIndx, card) for (handIndx, card) in sameColorPlay]
+            playMe.sort(key=lambda x: x[1][1].points)
+            bestCard = playMe[-1][0]
+            logg.debug('\nPlay same color: %s', playMe[-1][1][1])
+    elif wilds > 0:
+        playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
+        # check if any draw 4s playable
+        draw4s = [play for play in playMe if play[1][1].wildIndex == 1]
+        if (len(draw4s) > 0) and hurtFirst:
+            # get the first draw 4
+            bestCard = draw4s[0][0]
+            logg.debug('\nPlay wild (hurt first): %s', draw4s[0][1][1])
+        else:
+            # sort wilds so draw 4s are last
+            playMe.sort(key=lambda x: x[1][1].points)
+            # get the first wild to play
+            bestCard = playMe[0][0]
+            logg.debug('\nPlay wild: %s', playMe[0][1][1])
+
+        # choose the best color - the color with the most playable points
+        points = [0]*len(COLORS)
+        # iterate over cards and count total points
+        for card in thisPlayer.hand.currCards.values():
+            if card[1].colorIndex is not None:
+                points[card[1].colorIndex] += card[1].points
+        # get the color with the most points, then choose that color card with the most points
+        logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+                                                    for (cIndx, pts) in enumerate(points)]))
+        bestColor = np.argsort(points)[-1]
+    # choose best diff color by total playable points
+    elif diffColor > 0:
+        # get possible colors
+        colrs = set([card[1][1].colorIndex for card in diffColorPlay])
+        # total the cards of each color
+        points = [-1]*len(COLORS) # init to -1 so 0's can be differentiated from no cards
+        for card in thisPlayer.hand.currCards.values():
+            if (card[1].colorIndex is not None) & (card[1].colorIndex in colrs):
+                # get rid of the -1 first
+                if points[card[1].colorIndex] == -1:
+                    points[card[1].colorIndex] = 0
+                # add the points
+                points[card[1].colorIndex] += card[1].points
+        logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+                                                    for (cIndx, pts) in enumerate(points)]))
+        # get the color with the most points, then choose that color's diffColor card
+        bestColor = np.argsort(points)[-1]
+        playMe = [play for play in diffColorPlay if play[1][1].colorIndex==bestColor]
+        # check if any draw 2s playable
+        draw2s = [play for play in playMe if play[1][1].specialIndex == 2]
+        if (len(draw2s) > 0) & hurtFirst:
+            # get the first diff color draw 2
+            bestCard = draw2s[0][0]
+            logg.debug('\nPlay different color (hurt first): %s', draw2s[0][1][1])
+        elif (len(draw2s) > 0) & (len(draw2s) < len(playMe)) & (not hurtFirst):
+            ipdb.set_trace()
+            # there are more diff color playables than draw 2s, so drop them
+            playMe = [play for play in playMe if play[1][1].specialIndex != 2]
+            playMe.sort(key=lambda x: x[1][1].points)
+            bestCard = playMe[-1][0]
+            logg.debug('\nPlay different color: %s', playMe[-1][1][1])
+        else:
+            # not hurting first, no draw 2s, or only draw 2s available
+            playMe.sort(key=lambda x: x[1][1].points)
+            bestCard = playMe[-1][0]
+            logg.debug('\nPlay different color: %s', playMe[-1][1][1])
+    else:
+        # should not happen
+        logg.debug('\nNo card to play - impossible?!')
+        ipdb.set_trace()
+
+    return bestCard, bestColor
+
+
+def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
+                        sameColorSpecialPlay, wildPlay, diffColorPlay,
+                        hurtFirst:bool=False, hailMary:bool=False,
+                        addWildPoints:bool=False):
+    '''
+    Implement the "switch to max color" strategy. TODO
+    :param thisPlayer: current player
+    :param thisGame: current game
+    :param sameColorPlay: list of (hand index, card) playable same color value
+        cards
+    :param sameColorSpecialPlay: list of (hand index, card) playable same color
+        special cards
+    :param wildPlay: list of (hand index, card) playable wild cards
+    :param diffColorPlay: list of (hand index, card) playable different color
+        cards
+    :param hurtFirst: optional boolean (default=False) flag to indicate that a
+        draw 2 or draw 4 should be used before other specials or wilds; otherwise,
+        use them last
+    :param hailMary: optional boolean (default=False) flag to indicate that a
+        player with <= 2 cards should be defended against by playing, in preference
+        order: same color draw 2, same color special, draw 4, diff color draw 2,
+        diff color special
+    :param addWildPoints: optional boolean (default=false) flag to indicate, when
+        ranking colors that wild points to get to non-directly playable colors
+        should be added to the color's total points
+    :return bestCard: integer index into the hand of the best playable card
+    :return bestColor: integer color index of the color to set if wild played; 
+        None if wild not played
+    '''
+
+    bestCard = bestColor = None
+
+    # get directly (no wild) playable colors
+    directColrs = np.unique([play.colorIndex for play in sameColorPlay +\
+                             sameColorSpecialPlay + diffColorPlay])
+    # rank currently playable colors based on points
+    if len(wildPlay) > 0:
+        # a wild is playable, so all colors are game
+        points = [0]*len(COLORS)
+        # add wild points to colors that can only be accessed with a wild
+        if addWildPoints:
+            for colr in range(len(COLORS)):
+                if colr not in directColrs:
+                    points[colr] += wildPlay[0][1][1].points
+    else:
+        # no wild, so must be a playable card; start with -infs, then fill 0s if playable
+        points = [-1*np.inf]*len(COLORS)
+        for colr in directColrs:
+            points[colr] = 0
+    # iterate over cards and count total points
+    for card in thisPlayer.hand.currCards.values():
+        if card[1].colorIndex is not None:
+            points[card[1].colorIndex] += card[1].points
+    logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+                                                for (cIndx, pts) in enumerate(points)]))
+    # sort descending and get the color with the most points
+    rankedColors = np.argsort(points)[::-1]
+    bestColor = rankedColors[0]
+    logg.info('Best color = %s, %d points', COLORS[bestColor], points[bestColor])
+
+    # choose the best card to play
+    if bestColor == thisGame.currColor:
+        # if best color is current, just use stratFinishCurrentColor
+        bestCard, bestColor = stratFinishCurrentColor(thisPlayer, thisGame, sameColorPlay,
+                                                      sameColorSpecialPlay, wildPlay,
+                                                      diffColorPlay, hurtFirst, hailMary)
+    else:
+        # TODO: hailMary code to go here
+
+        # choose the best card
+        if bestColor in directColrs:
+            # best color is not directly playable, so use a wild
+            playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
+            # check if any draw 4s playable
+            draw4s = [play for play in playMe if play[1][1].wildIndex == 1]
+            if (len(draw4s) > 0) and hurtFirst:
+                # get the first draw 4
+                bestCard = draw4s[0][0]
+                logg.debug('\nPlay wild (hurt first): %s', draw4s[0][1][1])
+            else:
+                # sort wilds so draw 4s are last
+                playMe.sort(key=lambda x: x[1][1].points)
+                # get the first wild to play
+                bestCard = playMe[0][0]
+                logg.debug('\nPlay wild: %s', playMe[0][1][1])
+        else:
+            # get only diffColor cards that are this color, and split them by type
+            diffColorSpecialPlay = [play for play in diffColorPlay
+                                    if (play[1][1].colorIndex==bestColor) &
+                                    (play[1][1].specialIndex is not None)]
+            diffColorDraw2sPlay = [play for play in diffColorPlay
+                                   if (play[1][1].colorIndex==bestColor) &
+                                   (play[1][1].specialIndex == 2)]
+            diffColorRevSkpsPlay = [play for play in diffColorPlay
+                                    if (play[1][1].colorIndex==bestColor) &
+                                    (play[1][1].specialIndex == 0) |
+                                    (play[1][1].specialIndex == 1)]
+            diffColorPlay = [play for play in diffColorPlay
+                             if (play[1][1].colorIndex==bestColor) &
+                             (play[1][1].specialIndex is None)]
+            # count the number of cards
+            diffColorSpecial = len(diffColorSpecialPlay)
+            diffColorDraw2s = len(diffColorDraw2sPlay)
+            diffColorRevSkps = len(diffColorRevSkpsPlay)
+            diffColor = len(diffColorPlay)
+
+            # TODO
+
+
+        # does any player have 2 or fewer cards?
+        if (min(thisGame.playerCardsCounts) <= 2) & hailMary:
+            playersLT2 = len([c for c in thisGame.playerCardsCounts if c <= 2])
+            logg.info('%s players have <= 2 cards', playersLT2)
+            # determine what special / wild cards can defend
+            sameDraw2s = [play for play in sameColorSpecialPlay
+                          if play[1][1].specialIndex == 2]
+            sameRevSkps = [play for play in sameColorSpecialPlay
+                           if play[1][1].specialIndex < 2]
+            draw4s = [play for play in wildPlay if play[1][1].wildIndex==1]
+            diffDraw2s = [play for play in diffColorSpecialPlay
+                          if play[1][1].specialIndex == 2]
+            diffRevSkps = [play for play in diffColorSpecialPlay
+                           if (play[1][1].specialIndex == 0) |\
+                        (play[1][1].specialIndex == 1)]
+            defenseCards = len(sameDraw2s) + len(sameRevSkps) + len(draw4s) +\
+                len(diffDraw2s) + len(diffRevSkps)
+
+            logg.debug('%d cards to defend against <= 2 player', defenseCards)
+            # get the next player & their card count
+            nxt = thisGame.nextPlayer
+            nxtCards = thisGame.playerCardsCounts[nxt]
+            if nxtCards >= 2:
+                # next player has <= 2 cards
+                logg.info('Next player has %d cards', nxtCards)
+                # TODO
+            else:
+                # someone else has <= 2 cards
+                logg.info('Unsure how to defend against non-next player with <= 2 cards')
+
+        
 
     # choose the best card
     if (sameColor > 0) | (sameColorSpecial > 0):
