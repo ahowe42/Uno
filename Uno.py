@@ -1003,7 +1003,9 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     Implement the "finish current color" strategy. This will first try to play
     two cards (if two players can use skip / reverse to get a 2nd turn). Then it
     will try to play a special card, then a number card. Otherwise, it will try
-    to play a wild.
+    to play a wild. If none of these, it will try to play a different color card.
+    In the last 2 cases, the color is chosen according to whatever color has the
+    most total points in the hand.
     :param thisPlayer: current player
     :param thisGame: current game
     :param sameColorPlay: list of (hand index, card) playable same color value
@@ -1018,7 +1020,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         use them last
     :param hailMary: optional boolean (default=False) flag to indicate that a
         player with <= 2 cards should be defended against by playing, in preference
-        order: same color draw 2 same color special, draw 4, diff color draw 2,
+        order: same color draw 2, same color special, draw 4, diff color draw 2,
         diff color special
     :return bestCard: integer index into the hand of the best playable card
     :return bestColor: integer color index of the color to set if wild played; 
@@ -1062,28 +1064,24 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                     hurtFirst = True
                     logg.debug('Setting hurtFirst to True so draw 2 is played')
                 elif len(sameRevSkps) > 0:
-                    # don't need to do anything
+                    # don't need to do anything; this will already be picked
                     pass
                 elif len(draw4s) > 0:
                     # pretend no same color value cards available
-                    ipdb.set_trace() # debug testing
                     sameColor = 0
                     hurtFirst = True
                     logg.debug('Setting hurtFirst to True and ignoring same color value cards so draw 4 is played')
                 elif len(diffDraw2s) > 0:
                     # pretend no same color value cards & no wilds; ensure draw 2 diff color is played
-                    # this might not work if the color of this card is not the max color
-                    ipdb.set_trace() # debug testing
-                    hurtFirst = True
                     sameColor = 0
                     wilds = 0
-                    logg.debug('Setting hurtFirst to True and ignoring same color value cards & wilds so draw 2 is played')
+                    diffColorPlay = diffDraw2s
+                    logg.debug('Ignoring same color value cards & wilds so diff color draw 2 is played')
                 elif len(diffRevSkps) > 0:
                     # pretend no same color value cards & no wilds
-                    # this might not work if the color of this card is not the max color
-                    ipdb.set_trace() # debug testing
                     sameColor = 0
                     wilds = 0
+                    diffColorPlay = diffRevSkps
                     logg.debug('Ignoring same color value cards & wilds so diff color special is played')
             else:
                 logg.debug("Can't defend against next player with %d cards", nxtCards)
