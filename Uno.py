@@ -1,4 +1,6 @@
 '''
+# TODO: Choosing color: optionally switch between number of cards and point value cards 
+# TODO: game output should include points ranking
 # TODO: change strategy params to kwargs
 # TODO: setup to run from command line with args
 # TODO: improve talking
@@ -1200,7 +1202,12 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                         hurtFirst:bool=False, hailMary:bool=False,
                         addWildPoints:bool=False):
     '''
-    Implement the "switch to max color" strategy. TODO
+    Implement the "switch to max color" strategy. This will choose the color to
+    play based on the total number of points in the hand of the color, but only
+    for colors that are actually currently playable. If the best color to play
+    is the current color, it calls stratFinishCurrentColor. Once the best playable
+    color is selected, it will choose a card to play using the priority order of
+    wilds, special cards, then value cards (using the highest value of course).
     :param thisPlayer: current player
     :param thisGame: current game
     :param sameColorPlay: list of (hand index, card) playable same color value
@@ -1217,7 +1224,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         player with <= 2 cards should be defended against by playing, in preference
         order: draw 4, draw 2, other special
     :param addWildPoints: optional boolean (default=false) flag to indicate, when
-        ranking colors that wild points to get to non-directly playable colors
+        ranking colors, that wild points to get to non-directly playable colors
         should be added to the color's total points
     :return bestCard: integer index into the hand of the best playable card
     :return bestColor: integer color index of the color to set if wild played; 
@@ -1227,7 +1234,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     bestCard = bestColor = None
 
     # get directly (no wild) playable colors
-    directColrs = np.unique([play.colorIndex for play in sameColorPlay +\
+    directColors = np.unique([play.colorIndex for play in sameColorPlay +\
                              sameColorSpecialPlay + diffColorPlay])
     # rank currently playable colors based on points
     if len(wildPlay) > 0:
@@ -1236,12 +1243,12 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         # add wild points to colors that can only be accessed with a wild
         if addWildPoints:
             for colr in range(len(COLORS)):
-                if colr not in directColrs:
+                if colr not in directColors:
                     points[colr] += wildPlay[0][1][1].points
     else:
         # no wild, so must be a playable card; start with -infs, then fill 0s if playable
         points = [-1*np.inf]*len(COLORS)
-        for colr in directColrs:
+        for colr in directColors:
             points[colr] = 0
     # iterate over cards and count total points
     for card in thisPlayer.hand.currCards.values():
@@ -1252,6 +1259,11 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     # sort descending and get the color with the most points
     rankedColors = np.argsort(points)[::-1]
     bestColor = rankedColors[0]
+    # also sort descending the directly playable colors
+    ipdb.set_trace()
+    directPoints = [points[colr] for colr in directColors]
+    directColors = directColors[np.argsort(directPoints)[::-1]]
+    # talk
     logg.info('Best color = %s, %d points', COLORS[bestColor], points[bestColor])
 
     # choose the best card to play
@@ -1261,6 +1273,8 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                                                       sameColorSpecialPlay, wildPlay,
                                                       diffColorPlay, hurtFirst, hailMary)
     else:
+        # hail mary code goes in this else block because otherwise, it's handled
+        # in stratFinishCurrentColor
         # does any player have 2 or fewer cards?
         if (min(thisGame.playerCardsCounts) <= 2) & hailMary:
             playersLT2 = len([c for c in thisGame.playerCardsCounts if c <= 2])
@@ -1279,9 +1293,10 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             if nxtCards <= 2:
                 # next player has <= 2 cards
                 logg.info('Next player has %d cards', nxtCards)
+                ipdb.set_trace()
                 if defenseCards > 0:
                     if len(draw4s) > 0:
-                        # turn on hurt first and ignore other cards
+                        # turn on hurt first and ignore other cards; best color already set
                         hurtFirst = True
                         diffColorPlay = []
                         sameColorPlay = []
@@ -1289,10 +1304,21 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                     elif len(draw2s) > 0:
                         # just turn on hurt first
                         hurtFirst = True
-                        logg.debug('Setting hurtFirst to True so draw 2 is played')
+                        # set bestColor to the best draw 2 that is directly playable
+                        for color in directColors:
+                            # are there any draw 2s for this color?
+                            if len([card for card in draw2s if card[1][1].colorIndex == color]) > 0:
+                                bestColor = color
+                                break
+                        logg.debug('Setting hurtFirst to True so draw 2 is played and setting color accordingly')
                     elif len(revSkps) > 0:
-                        # shouldn't need to do anything
-                        pass
+                        # set bestColor to the best reverse / skip that is directly playable
+                        for color in directColors:
+                            # are there any revs / skips for this color?
+                            if len([card for card in revSkps if card[1][1].colorIndex == color]) > 0:
+                                bestColor = color
+                                break
+                        logg.debug('Setting color so a reverse / skip is played')
                 else:
                     logg.debug("Can't defend against next player with %d cards", nxtCards)
             else:
@@ -1300,7 +1326,8 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                 logg.info('Unsure how to defend against non-next player with <= 2 cards')
 
         # choose the best card
-        if bestColor in directColrs:
+        if bestColor in directColors:
+            ipdb.set_trace()
             # best color is not directly playable, so use a wild
             playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
             # check if any draw 4s playable
@@ -1335,16 +1362,26 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             diffColorDraw2s = len(diffColorDraw2sPlay)
             diffColorRevSkps = len(diffColorRevSkpsPlay)
             diffColor = len(diffColorPlay)
-
-            # TODO
-
-
-
-        
-    else:
-        # should not happen
-        logg.debug('\nNo card to play - impossible?!')
-        ipdb.set_trace()
+            ipdb.set_trace()
+            # TODO: note that this strategy won't currently try to play 2 cards; this
+            # should be added later
+            if diffColorSpecial > 0:
+                # play a draw 2 or reverse / skip?
+                if (len(diffColorDraw2s) > 0) & hurtFirst:
+                    bestCard = diffColorDraw2s[0][0]
+                    logg.debug('\nPlay: %s', diffColorDraw2s[0][1][1])
+                else:
+                    bestCard = diffColorRevSkps[0][0]
+                    logg.debug('\nPlay: %s', diffColorRevSkps[0][1][1])
+            elif diffColor > 0:
+                # get the highest valued value card to play
+                diffColorPlay.sort(key=lambda x: x[1][1].points)
+                bestCard = diffColorPlay[-1][0]
+                logg.debug('\nPlay: %s', diffColorPlay[-1][1][1])
+            else:
+                # should not happen
+                logg.debug('\nNo card to play - impossible?!')
+                ipdb.set_trace()
 
     return bestCard, bestColor
 
