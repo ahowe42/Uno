@@ -1,5 +1,4 @@
 '''
-# TODO: Choosing color: optionally switch between number of cards and point value cards 
 # TODO: game output should include points ranking
 # TODO: change strategy params to kwargs
 # TODO: setup to run from command line with args
@@ -1001,7 +1000,8 @@ class Game():
 
 def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                             sameColorSpecialPlay, wildPlay, diffColorPlay,
-                            hurtFirst:bool=False, hailMary:bool=False):
+                            hurtFirst:bool=False, hailMary:bool=False,
+                            countNotPoint:bool=False):
     '''
     Implement the "finish current color" strategy. This will first try to play
     two cards (if two players can use skip / reverse to get a 2nd turn). Then it
@@ -1025,6 +1025,9 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         player with <= 2 cards should be defended against by playing, in preference
         order: same color draw 2, same color special, draw 4, diff color draw 2,
         diff color special
+    :param countNotPoint: optional boolean (default=False) flag to indicate, when
+        choosing a different color to play, that card counts should be used
+        instead of points
     :return bestCard: integer index into the hand of the best playable card
     :return bestColor: integer color index of the color to set if wild played; 
         None if wild not played
@@ -1148,7 +1151,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         # iterate over cards and count total points
         for card in thisPlayer.hand.currCards.values():
             if card[1].colorIndex is not None:
-                points[card[1].colorIndex] += card[1].points
+                points[card[1].colorIndex] += 1 if countNotPoint else card[1].points
         # get the color with the most points, then choose that color card with the most points
         logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
                                                     for (cIndx, pts) in enumerate(points)]))
@@ -1165,7 +1168,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                 if points[card[1].colorIndex] == -1:
                     points[card[1].colorIndex] = 0
                 # add the points
-                points[card[1].colorIndex] += card[1].points
+                points[card[1].colorIndex] += 1 if countNotPoint else card[1].points
         logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
                                                     for (cIndx, pts) in enumerate(points)]))
         # get the color with the most points, then choose that color's diffColor card
@@ -1200,7 +1203,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                         sameColorSpecialPlay, wildPlay, diffColorPlay,
                         hurtFirst:bool=False, hailMary:bool=False,
-                        addWildPoints:bool=False):
+                        addWildPoints:bool=False, countNotPoint:bool=False):
     '''
     Implement the "switch to max color" strategy. This will choose the color to
     play based on the total number of points in the hand of the color, but only
@@ -1223,9 +1226,11 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     :param hailMary: optional boolean (default=False) flag to indicate that a
         player with <= 2 cards should be defended against by playing, in preference
         order: draw 4, draw 2, other special
-    :param addWildPoints: optional boolean (default=false) flag to indicate, when
+    :param addWildPoints: optional boolean (default=False) flag to indicate, when
         ranking colors, that wild points to get to non-directly playable colors
         should be added to the color's total points
+    :param countNotPoint: optional boolean (default=False) flag to indicate, when
+        ranking colors, that card counts should be used instead of points
     :return bestCard: integer index into the hand of the best playable card
     :return bestColor: integer color index of the color to set if wild played; 
         None if wild not played
@@ -1244,7 +1249,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         if addWildPoints:
             for colr in range(len(COLORS)):
                 if colr not in directColors:
-                    points[colr] += wildPlay[0][1][1].points
+                    points[colr] += 1 if countNotPoint else wildPlay[0][1][1].points
     else:
         # no wild, so must be a playable card; start with -infs, then fill 0s if playable
         points = [-1*np.inf]*len(COLORS)
@@ -1253,7 +1258,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     # iterate over cards and count total points
     for card in thisPlayer.hand.currCards.values():
         if card[1].colorIndex is not None:
-            points[card[1].colorIndex] += card[1].points
+            points[card[1].colorIndex] += 1 if countNotPoint else card[1].points
     logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
                                                 for (cIndx, pts) in enumerate(points)]))
     # sort descending and get the color with the most points
@@ -1390,6 +1395,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 # setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
 MCSims = 10
+# add wild points flag, count not points flag
 configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover'],
             'strats':[{'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False},
                       {'strategy':stratFinishCurrentColor, 'hurtFirst':True, 'hailMary':False},
