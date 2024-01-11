@@ -1,6 +1,7 @@
 '''
-# TODO: game output should include points ranking
 # TODO: change strategy params to kwargs
+# TODO: build experiment design
+# TODO: game output should include points remaining and ranking per player
 # TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
@@ -10,7 +11,6 @@ with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
         results[indx] = expd
 '''
-''' strategy ideas: prefer finish color, switch max color '''
 from itertools import product
 import logging
 import time
@@ -998,6 +998,58 @@ class Game():
                 self.winner = indx
 
 
+def parseCardsList(cardsInHandList:list, draw2:int=False, revSkp:int=False,
+                   spec:int=False, draw4:int=False, valu:int=False):
+    '''
+    Take a list of cards and parse by type.
+    :param cardsInHandList: list of (hand index, card)
+    :param draw2: optional (default=False) flag to return a list of draw 2 specials
+    :param revSkp: optional (default=False) flag to return a list of reverse / skip specials
+    :param spec: optional (default=False) flag to return a list of all specials
+    :param draw4: optional (default=False) flag to return a list of draw 4 wilds
+    :param valu: optional (default=False) flag to return a list of value cards
+    :return results: list of requested lists in order of draw 2s, reverse / skips,
+        specials, draw 4s, value cards; lists included depend on the input flags
+    '''
+
+    # initialize parsed lists and output
+    results = []
+    if draw2:
+        draw2s = []
+        results.append(draw2s)
+    if revSkp:
+        revSkps = []
+        results.append(revSkps)
+    if spec:
+        specials = []
+        results.append(specials)
+    if draw4:
+        draw4s = []
+        results.append(draw4s)
+    if valu:
+        values = []
+        results.append(values)
+
+    # iterate and parse cards list
+    for play in cardsInHandList:
+        # get the special cards
+        if (spec or draw2 or revSkp) & (play[1][1].specialIndex is not None):
+            if spec:
+                specials.append(play)
+            if draw2 & (play[1][1].specialIndex == 2):
+                draw2s.append(play)
+            if revSkp & (play[1][1].specialIndex < 2):
+                revSkps.append(play)
+        # get draw 4 wilds
+        if draw4 & (play[1][1].wildIndex is not None):
+            if play[1][1].wildIndex == 1:
+                draw4s.append(play)            
+        if valu & (play[1][1].specialIndex is None) & (play[1][1].wildIndex is None):
+            values.append(play)
+
+    return results
+
+
 def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                             sameColorSpecialPlay, wildPlay, diffColorPlay,
                             hurtFirst:bool=False, hailMary:bool=False,
@@ -1046,12 +1098,11 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         playersLT2 = len([c for c in thisGame.playerCardsCounts if c <= 2])
         logg.info('%s players have <= 2 cards', playersLT2)
         # determine what special / wild cards can defend
-        sameDraw2s = [play for play in sameColorSpecialPlay if play[1][1].specialIndex == 2]
-        sameRevSkps = [play for play in sameColorSpecialPlay if play[1][1].specialIndex < 2]
-        draw4s = [play for play in wildPlay if play[1][1].wildIndex==1]
-        diffDraw2s = [play for play in diffColorPlay if play[1][1].specialIndex == 2]
-        diffRevSkps = [play for play in diffColorPlay if (play[1][1].specialIndex == 0) |\
-                       (play[1][1].specialIndex == 1)]
+        sameDraw2s, sameRevSkps = parseCardsList(sameColorSpecialPlay,
+                                                 draw2=True, revSkp=True)
+        draw4s = parseCardsList(wildPlay, draw4=True)[0]
+        diffDraw2s, diffRevSkps = parseCardsList(diffColorPlay,
+                                                 draw2=True, revSkp=True)
         defenseCards = len(sameDraw2s) + len(sameRevSkps) + len(draw4s) +\
             len(diffDraw2s) + len(diffRevSkps)
 
@@ -1113,7 +1164,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         elif sameColorSpecial > 0:
             playMe = [(handIndx, card) for (handIndx, card) in sameColorSpecialPlay]
             # check if any draw 2s playable
-            draw2s = [play for play in playMe if play[1][1].specialIndex == 2]
+            draw2s = parseCardsList(playMe, draw2=True)[0]
             if (len(draw2s) > 0) and hurtFirst:
                 # get the first draw 2
                 bestCard = draw2s[0][0]
@@ -1134,7 +1185,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     elif wilds > 0:
         playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
         # check if any draw 4s playable
-        draw4s = [play for play in playMe if play[1][1].wildIndex == 1]
+        draw4s = parseCardsList(playMe, draw4=True)[0]
         if (len(draw4s) > 0) and hurtFirst:
             # get the first draw 4
             bestCard = draw4s[0][0]
@@ -1175,7 +1226,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         bestColor = np.argsort(points)[-1]
         playMe = [play for play in diffColorPlay if play[1][1].colorIndex==bestColor]
         # check if any draw 2s playable
-        draw2s = [play for play in playMe if play[1][1].specialIndex == 2]
+        draw2s = parseCardsList(playMe, draw2=True)[0]
         if (len(draw2s) > 0) & hurtFirst:
             # get the first diff color draw 2
             bestCard = draw2s[0][0]
@@ -1239,7 +1290,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     bestCard = bestColor = None
 
     # get directly (no wild) playable colors
-    directColors = np.unique([play.colorIndex for play in sameColorPlay +\
+    directColors = np.unique([play[1][1].colorIndex for play in sameColorPlay +\
                              sameColorSpecialPlay + diffColorPlay])
     # rank currently playable colors based on points
     if len(wildPlay) > 0:
@@ -1260,12 +1311,12 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         if card[1].colorIndex is not None:
             points[card[1].colorIndex] += 1 if countNotPoint else card[1].points
     logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
-                                                for (cIndx, pts) in enumerate(points)]))
+                                                for (cIndx, pts) in
+                                                enumerate(np.nan_to_num(points, neginf=0))]))
     # sort descending and get the color with the most points
     rankedColors = np.argsort(points)[::-1]
     bestColor = rankedColors[0]
     # also sort descending the directly playable colors
-    ipdb.set_trace()
     directPoints = [points[colr] for colr in directColors]
     directColors = directColors[np.argsort(directPoints)[::-1]]
     # talk
@@ -1274,6 +1325,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     # choose the best card to play
     if bestColor == thisGame.currColor:
         # if best color is current, just use stratFinishCurrentColor
+        logg.debug('Best color is same as current, so switching strategy')
         bestCard, bestColor = stratFinishCurrentColor(thisPlayer, thisGame, sameColorPlay,
                                                       sameColorSpecialPlay, wildPlay,
                                                       diffColorPlay, hurtFirst, hailMary)
@@ -1285,11 +1337,9 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             playersLT2 = len([c for c in thisGame.playerCardsCounts if c <= 2])
             logg.info('%s players have <= 2 cards', playersLT2)
             # determine what special / wild cards can defend
-            draw4s = [play for play in wildPlay if play[1][1].wildIndex==1]
-            draw2s = [play for play in sameColorSpecialPlay+diffColorPlay
-                      if play[1][1].specialIndex == 2]
-            revSkps = [play for play in sameColorSpecialPlay+diffColorPlay
-                       if play[1][1].specialIndex < 2]
+            draw4s = parseCardsList(wildPlay, draw4=True)[0]
+            draw2s, revSkps = parseCardsList(sameColorSpecialPlay+diffColorPlay,
+                                             draw2=True, revSkp=True)
             defenseCards = len(draw4s) + len(draw2s) + len(revSkps)
             logg.debug('%d cards to defend against <= 2 player', defenseCards)
             # get the next player & their card count
@@ -1298,13 +1348,14 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             if nxtCards <= 2:
                 # next player has <= 2 cards
                 logg.info('Next player has %d cards', nxtCards)
-                ipdb.set_trace()
                 if defenseCards > 0:
                     if len(draw4s) > 0:
                         # turn on hurt first and ignore other cards; best color already set
+                        # clear directColors so wild is forced
                         hurtFirst = True
                         diffColorPlay = []
                         sameColorPlay = []
+                        directColors = []
                         logg.debug('Setting hurtFirst to True & ignoring other cards so draw 4 is played')
                     elif len(draw2s) > 0:
                         # just turn on hurt first
@@ -1323,7 +1374,8 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                             if len([card for card in revSkps if card[1][1].colorIndex == color]) > 0:
                                 bestColor = color
                                 break
-                        logg.debug('Setting color so a reverse / skip is played')
+                        logg.debug('Setting color to %s so a reverse / skip is played',
+                                   COLORS[bestColor])
                 else:
                     logg.debug("Can't defend against next player with %d cards", nxtCards)
             else:
@@ -1331,8 +1383,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                 logg.info('Unsure how to defend against non-next player with <= 2 cards')
 
         # choose the best card
-        if bestColor in directColors:
-            ipdb.set_trace()
+        if bestColor not in directColors:
             # best color is not directly playable, so use a wild
             playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
             # check if any draw 4s playable
@@ -1348,41 +1399,30 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                 bestCard = playMe[0][0]
                 logg.debug('\nPlay wild: %s', playMe[0][1][1])
         else:
-            # get only diffColor cards that are this color, and split them by type
-            diffColorSpecialPlay = [play for play in diffColorPlay
-                                    if (play[1][1].colorIndex==bestColor) &
-                                    (play[1][1].specialIndex is not None)]
-            diffColorDraw2sPlay = [play for play in diffColorPlay
-                                   if (play[1][1].colorIndex==bestColor) &
-                                   (play[1][1].specialIndex == 2)]
-            diffColorRevSkpsPlay = [play for play in diffColorPlay
-                                    if (play[1][1].colorIndex==bestColor) &
-                                    (play[1][1].specialIndex == 0) |
-                                    (play[1][1].specialIndex == 1)]
-            diffColorPlay = [play for play in diffColorPlay
-                             if (play[1][1].colorIndex==bestColor) &
-                             (play[1][1].specialIndex is None)]
-            # count the number of cards
-            diffColorSpecial = len(diffColorSpecialPlay)
-            diffColorDraw2s = len(diffColorDraw2sPlay)
-            diffColorRevSkps = len(diffColorRevSkpsPlay)
-            diffColor = len(diffColorPlay)
-            ipdb.set_trace()
-            # TODO: note that this strategy won't currently try to play 2 cards; this
-            # should be added later
-            if diffColorSpecial > 0:
+            # separate playable cards
+            # test with seed 861987
+            draw2sPlay, revSkpsPlay, specialPlay, valuePlay = parseCardsList(
+                [play for play in diffColorPlay+sameColorPlay if
+                 play[1][1].colorIndex==bestColor], draw2=True, revSkp=True,
+                 spec=True, valu=True)
+            # TODO: note that this strategy won't currently try to play 2 cards;
+            # this should be added later
+            if len(specialPlay) > 0:
                 # play a draw 2 or reverse / skip?
-                if (len(diffColorDraw2s) > 0) & hurtFirst:
-                    bestCard = diffColorDraw2s[0][0]
-                    logg.debug('\nPlay: %s', diffColorDraw2s[0][1][1])
+                if (len(draw2sPlay) > 0) & hurtFirst:
+                    bestCard = draw2sPlay[0][0]
+                    logg.debug('\nPlay: %s', draw2sPlay[0][1][1])
+                elif len(revSkpsPlay) > 0:
+                    bestCard = revSkpsPlay[0][0]
+                    logg.debug('\nPlay: %s', revSkpsPlay[0][1][1])
                 else:
-                    bestCard = diffColorRevSkps[0][0]
-                    logg.debug('\nPlay: %s', diffColorRevSkps[0][1][1])
-            elif diffColor > 0:
+                    bestCard = draw2sPlay[0][0]
+                    logg.debug('\nPlay: %s', draw2sPlay[0][1][1])
+            elif len(valuePlay) > 0:
                 # get the highest valued value card to play
-                diffColorPlay.sort(key=lambda x: x[1][1].points)
-                bestCard = diffColorPlay[-1][0]
-                logg.debug('\nPlay: %s', diffColorPlay[-1][1][1])
+                valuePlay.sort(key=lambda x: x[1][1].points)
+                bestCard = valuePlay[-1][0]
+                logg.debug('\nPlay: %s', valuePlay[-1][1][1])
             else:
                 # should not happen
                 logg.debug('\nNo card to play - impossible?!')
@@ -1394,14 +1434,19 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 ''' EXECUTE '''
 # setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
-MCSims = 10
-# add wild points flag, count not points flag
-configs = [{'players':['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover'],
-            'strats':[{'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':False},
-                      {'strategy':stratFinishCurrentColor, 'hurtFirst':True, 'hailMary':False},
-                      {'strategy':stratFinishCurrentColor, 'hurtFirst':False, 'hailMary':True},
-                      {'strategy':stratFinishCurrentColor, 'hurtFirst':True, 'hailMary':True}],
-            'start':None, 'descrip':'Test Game'}]*MCSims
+MCSims = 100
+# players
+players = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
+strategies = [{'strategy':stratSwitchMaxColor, 'hurtFirst':False,
+               'hailMary':False, 'countNotPoint':False, 'wildPoints':False},
+              {'strategy':stratSwitchMaxColor, 'hurtFirst':True,
+               'hailMary':False, 'countNotPoint':False, 'wildPoints':False},
+              {'strategy':stratSwitchMaxColor, 'hurtFirst':False,
+               'hailMary':True, 'countNotPoint':False, 'wildPoints':False},
+              {'strategy':stratSwitchMaxColor, 'hurtFirst':True,
+               'hailMary':True, 'countNotPoint':False, 'wildPoints':False}]
+configs = [{'players':players, 'strats':strategies, 'start':None,
+            'descrip':'Test Game'}]*MCSims
 allResults = [None]*MCSims
 resultsDF = pd.DataFrame(index=range(MCSims))
 
@@ -1421,7 +1466,7 @@ for (indx, gameCFG) in enumerate(configs):
         '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
     players = [Player(name, strat) for (name, strat) in
                zip(gameCFG['players'], gameCFG['strats'])]
-    #rndSeed = 607729
+    #rndSeed = 861987
     rndSeed = None
 
     # start logger
