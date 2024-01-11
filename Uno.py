@@ -1,5 +1,4 @@
 '''
-# TODO: change strategy params to kwargs
 # TODO: build experiment design
 # TODO: game output should include points remaining and ranking per player
 # TODO: setup to run from command line with args
@@ -527,19 +526,17 @@ class Hand():
 
 
 class Player():
-    def __init__(self, name:str, strategy, hand:Hand=None):
+    def __init__(self, name:str, strategy, strategyParams:dict, hand:Hand=None):
         '''
         Define an Uno player.
         :param name: string name of player
-        :param strategy: dict holding 'strategy': callable implementing player's
-            strategy, 'hurtFirst': flag for callable, 'hailMary': flag for
-            callable (see strategy function)
+        :param strategy: callable implementing player's strategy
+        :param strategyParams: dict of kwarg parameters for strategy callable
         :param hand: optional (default=None) Hand object for player
         '''
         self.name = name
-        self.strategy = strategy['strategy']
-        self.strategyHF = strategy.get('hurtFirst', False)
-        self.strategyHM = strategy.get('hailMary', False)
+        self.strategy = strategy
+        self.strategyParams = strategyParams
         self.hand = None
 
     def __str__(self):
@@ -660,8 +657,7 @@ class Player():
             # execute the strategy
             bestCard, bestColor = self.strategy(self, thisGame, sameColorPlay,
                                                 sameColorSpecialPlay, wildPlay,
-                                                diffColorPlay, self.strategyHF,
-                                                self.strategyHM)
+                                                diffColorPlay, **self.strategyParams)
 
             # just pick the highest value playable card - should not happen
             if bestCard is None:
@@ -1326,9 +1322,16 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     if bestColor == thisGame.currColor:
         # if best color is current, just use stratFinishCurrentColor
         logg.debug('Best color is same as current, so switching strategy')
+        # first remove addWildPoints if in the params
+        sParms = thisPlayer.strategyParams.copy()
+        try:
+            sParms.pop('addWildPoints')
+        except NameError:
+            # this wasn't here, so it's all good
+            pass
         bestCard, bestColor = stratFinishCurrentColor(thisPlayer, thisGame, sameColorPlay,
                                                       sameColorSpecialPlay, wildPlay,
-                                                      diffColorPlay, hurtFirst, hailMary)
+                                                      diffColorPlay, **sParms)
     else:
         # hail mary code goes in this else block because otherwise, it's handled
         # in stratFinishCurrentColor
@@ -1434,18 +1437,22 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
 ''' EXECUTE '''
 # setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
-MCSims = 100
+MCSims = 10
 # players
 players = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
-strategies = [{'strategy':stratSwitchMaxColor, 'hurtFirst':False,
-               'hailMary':False, 'countNotPoint':False, 'wildPoints':False},
-              {'strategy':stratSwitchMaxColor, 'hurtFirst':True,
-               'hailMary':False, 'countNotPoint':False, 'wildPoints':False},
-              {'strategy':stratSwitchMaxColor, 'hurtFirst':False,
-               'hailMary':True, 'countNotPoint':False, 'wildPoints':False},
-              {'strategy':stratSwitchMaxColor, 'hurtFirst':True,
-               'hailMary':True, 'countNotPoint':False, 'wildPoints':False}]
-configs = [{'players':players, 'strats':strategies, 'start':None,
+strategies = [stratSwitchMaxColor, stratSwitchMaxColor, stratSwitchMaxColor,
+              stratSwitchMaxColor]
+strategyParams = [{'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
+                   'addWildPoints':False},
+                   {'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
+                   'addWildPoints':False},
+                   {'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
+                   'addWildPoints':False},
+                   {'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
+                   'addWildPoints':False}]
+
+configs = [{'players':players, 'strategies':strategies,
+            'strategyParams':strategyParams, 'start':None,
             'descrip':'Test Game'}]*MCSims
 allResults = [None]*MCSims
 resultsDF = pd.DataFrame(index=range(MCSims))
@@ -1464,8 +1471,9 @@ for (indx, gameCFG) in enumerate(configs):
     gameDescrip = gameCFG['descrip']
     logGameName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
         '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
-    players = [Player(name, strat) for (name, strat) in
-               zip(gameCFG['players'], gameCFG['strats'])]
+    players = [Player(name, strat, params) for (name, strat, params) in
+               zip(gameCFG['players'], gameCFG['strategies'],
+                   gameCFG['strategyParams'])]
     #rndSeed = 861987
     rndSeed = None
 
@@ -1492,11 +1500,18 @@ for (indx, gameCFG) in enumerate(configs):
     resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
     resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
     resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
-    # add player-specific data
+    # add player-specific data TODO: update this from the new config
     for (pindx, _) in enumerate(players):
-        resultsDF.loc[indx, 'player%d_strat'%pindx] = gameCFG['strats'][pindx]['strategy'].__name__
-        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = gameCFG['strats'][pindx].get('hurtFirst', False)
-        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = gameCFG['strats'][pindx].get('hailMary', False)
+        resultsDF.loc[indx, 'player%d_strat'%pindx] = gameCFG['strategies']\
+            [pindx].__name__
+        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = gameCFG['strategyParams']\
+            [pindx].get('hurtFirst', False)
+        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = gameCFG['strategyParams']\
+            [pindx].get('hailMary', False)
+        resultsDF.loc[indx, 'player%d_stratWP'%pindx] = gameCFG['strategyParams']\
+            [pindx].get('addWildPoints', False)
+        resultsDF.loc[indx, 'player%d_stratCP'%pindx] = gameCFG['strategyParams']\
+            [pindx].get('countNotPoint', False)
         resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
             ['player played summary'][pindx][0]
         resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
@@ -1511,11 +1526,17 @@ for (indx, gameCFG) in enumerate(configs):
             ['player played summary'][pindx][-2][1]
         resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
             ['player played summary'][pindx][-2][2]
-    # add winner data again as separate featues
+    # add winner data again as separate features TODO: update this from the new config
     winr = allResults[indx]['winner']
-    resultsDF.loc[indx, 'winner_strat'] = gameCFG['strats'][winr]['strategy'].__name__
-    resultsDF.loc[indx, 'winner_stratHF'] = gameCFG['strats'][winr].get('hurtFirst', False)
-    resultsDF.loc[indx, 'winner_stratHM'] = gameCFG['strats'][winr].get('hailMary', False)
+    resultsDF.loc[indx, 'winner_strat'] = gameCFG['strategies'][winr].__name__
+    resultsDF.loc[indx, 'winner_stratHF'] = gameCFG['strategyParams'][winr].\
+        get('hurtFirst', False)
+    resultsDF.loc[indx, 'winner_stratHM'] = gameCFG['strategyParams'][winr].\
+        get('hailMary', False)
+    resultsDF.loc[indx, 'winner_stratWP'] = gameCFG['strategyParams'][winr].\
+        get('addWildPoints', False)
+    resultsDF.loc[indx, 'winner_stratCP'] = gameCFG['strategyParams'][winr].\
+        get('countNotPoint', False)
     resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
         ['player played summary'][winr][0]
     resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
