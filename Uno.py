@@ -1,6 +1,5 @@
 '''
 # TODO: build experiment design
-# TODO: game output should include points remaining and ranking per player
 # TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
@@ -874,6 +873,7 @@ class Game():
                           'discard summary':self.discardSummary,
                           'player remaining summary':self.playerRemain,
                           'player played summary':self.playerPlayed,
+                          'player ranking':self.playerRank,
                           'random seed':rndSeed, 'times rebuilt':self.rebuilt,
                           'start':self.start}
 
@@ -992,6 +992,10 @@ class Game():
             # winner
             if self.playerRemain[indx][0] == 0:
                 self.winner = indx
+
+        # add the  player's rankings
+        self.playerRank = np.argsort(np.argsort([self.playerRemain[p][1] for p in
+                                                 range(self.playersCount)]))
 
 
 def parseCardsList(cardsInHandList:list, draw2:int=False, revSkp:int=False,
@@ -1500,7 +1504,7 @@ for (indx, gameCFG) in enumerate(configs):
     resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
     resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
     resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
-    # add player-specific data TODO: update this from the new config
+    # add player-specific data
     for (pindx, _) in enumerate(players):
         resultsDF.loc[indx, 'player%d_strat'%pindx] = gameCFG['strategies']\
             [pindx].__name__
@@ -1526,7 +1530,14 @@ for (indx, gameCFG) in enumerate(configs):
             ['player played summary'][pindx][-2][1]
         resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
             ['player played summary'][pindx][-2][2]
-    # add winner data again as separate features TODO: update this from the new config
+        resultsDF.loc[indx, 'player%d_remain_cards'%pindx] = allResults[indx]\
+            ['player remaining summary'][pindx][0]
+        resultsDF.loc[indx, 'player%d_remain_points'%pindx] = allResults[indx]\
+            ['player remaining summary'][pindx][1]
+        resultsDF.loc[indx, 'player%d_rank'%pindx] = allResults[indx]\
+            ['player ranking'][pindx]
+        
+    # add winner data again as separate features
     winr = allResults[indx]['winner']
     resultsDF.loc[indx, 'winner_strat'] = gameCFG['strategies'][winr].__name__
     resultsDF.loc[indx, 'winner_stratHF'] = gameCFG['strategyParams'][winr].\
