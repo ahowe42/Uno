@@ -1,7 +1,5 @@
 '''
-# TODO: build experiment design; 24 total options, how do I run with this now?
 # TODO: setup to run from command line with args
-# TODO: improve talking
 # TODO: test test test
 # TODO: someday refactor strategies and how playable cards are passed
 # TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
@@ -283,13 +281,13 @@ class Deck():
             # ensure there are enough cards in the deck
             if (thisGame.discardPile is not None) & (self.size <= cards):
                 # not enough cards, so reset the deck
-                logg.info('Only %d card(s), so rebuilding the deck from discard pile',
+                gLogg.info('Only %d card(s), so rebuilding the deck from discard pile',
                     self.size)
                 thisGame.rebuildDeck()
                 rebuild = True
             elif self.size <= cards:
                 # this should never happen
-                logg.debug('Only %d cards, but discard is empty',
+                gLogg.debug('Only %d cards, but discard is empty',
                     self.size)
                 raise ValueError('Not enough cards to deal')
 
@@ -421,9 +419,9 @@ class Hand():
         '''
 
         # talk
-        logg.info('\nPlaying %s', self.currCards[card][1])
+        gLogg.info('\nPlaying %s', self.currCards[card][1])
         if colorIndex is not None:
-            logg.info('\nNew color = %s', COLORS[colorIndex])
+            gLogg.info('\nNew color = %s', COLORS[colorIndex])
         # move to played cards
         this = self.currCards.pop(card)
         self.playedCards[card] = this
@@ -561,7 +559,7 @@ class Player():
             if thisGame.currColor is None:
                 # choose color as most frequent in hand
                 bestColor = self.hand.colorOrders[0]
-                logg.debug('\nWild on discard with no color, so choosing %s, %r',
+                gLogg.debug('\nWild on discard with no color, so choosing %s, %r',
                     COLORS[bestColor], self.hand.colorOrders[0])
                 thisGame.currColor = bestColor
 
@@ -581,23 +579,23 @@ class Player():
             # wild +4s only playable if none of the current color in the hand
             if len(self.hand.colors[thisGame.currColor]) == 0:
                 playableCards.extend(self.hand.wilds[1])
-                logg.debug('\nNo %s color cards, so wild +4 is playable',
+                gLogg.debug('\nNo %s color cards, so wild +4 is playable',
                     COLORS[thisGame.currColor])
             # get uniques
             playableCards = set(playableCards)
 
             # do we need to draw a card?
             if (len(playableCards) == 0) & (whilePass == 0):
-                logg.info('\nNo cards to play, drawing 1')
+                gLogg.info('\nNo cards to play, drawing 1')
                 card = thisGame.deck.deal(1, thisGame)[0]
                 self.hand.addCard(card)
-                logg.info('\nDealt %s', card[1])
+                gLogg.info('\nDealt %s', card[1])
             else:
                 break
             whilePass += 1
 
         # show hand
-        logg.debug('\n%s', self.hand.showHand(summary=False))
+        gLogg.debug('\n%s', self.hand.showHand(summary=False))
 
         # can we play?
         if len(playableCards) > 0:
@@ -637,7 +635,7 @@ class Player():
                 if playables[handIndx][1] in [4, 6]:
                     diffColorPlay.append((handIndx, card))
                 # talk
-                logg.debug('\nPlayable %d = (%d, %s): reason = %d', handIndx,
+                gLogg.debug('\nPlayable %d = (%d, %s): reason = %d', handIndx,
                     *self.hand.currCards[handIndx], playables[handIndx][1])
             # summarize the summary
             sameColor = len(sameColorPlay)
@@ -645,11 +643,11 @@ class Player():
             diffColor = len(diffColorPlay)
             wilds = len(wildPlay)
             # talk
-            logg.debug('\nPlayable: %d same colors, %d same color specials, %d wilds, %d different colors',
+            gLogg.debug('\nPlayable: %d same colors, %d same color specials, %d wilds, %d different colors',
                 sameColor, sameColorSpecial, wilds, diffColor)
-            logg.debug('\nPlayable same colors: %s\nPlayable same color specials, %s',
+            gLogg.debug('\nPlayable same colors: %s\nPlayable same color specials, %s',
                        sameColorPlay, sameColorSpecialPlay)
-            logg.debug('\nPlayable wilds: %s\nPlayable different colors: %s',
+            gLogg.debug('\nPlayable wilds: %s\nPlayable different colors: %s',
                        wildPlay, diffColorPlay)
 
             ''' now determine the best card to play '''
@@ -664,26 +662,26 @@ class Player():
                           in playables.keys()]
                 playMe.sort(key=lambda x: x[1][1].points)
                 bestCard = playMe[-1][0]
-                logg.debug('\nPlay highest value playable card: %s',
+                gLogg.debug('\nPlay highest value playable card: %s',
                            self.hand.currCards[bestCard][1])
 
             # play the best card
             if bestCard is not None:
-                logg.info('\nBest card = %s', self.hand.currCards[bestCard][1])
+                gLogg.info('\nBest card = %s', self.hand.currCards[bestCard][1])
                 thisGame.addToDiscard(self.hand.currCards[bestCard], bestColor)
                 _ = self.hand.playCard(bestCard, bestColor)
         else:
-            logg.info('\nNo cards to play - skipping turn')        
+            gLogg.info('\nNo cards to play - skipping turn')        
 
         # yell Uno!
         if self.hand.cardCount == 1:
-            logg.info('\nUno!')
+            gLogg.info('\nUno!')
         elif self.hand.cardCount == 0:
-            logg.info('\nI won!')
+            gLogg.info('\nI won!')
 
         # update the card count for this player
         thisGame.playerCardsCounts[thisGame.currPlayer] = self.hand.cardCount
-        logg.debug('\nPlayer %s now has %d cards, %d points',
+        gLogg.debug('\nPlayer %s now has %d cards, %d points',
             thisGame.players[thisGame.currPlayer].name, self.hand.cardCount, self.hand.points)
 
 
@@ -705,7 +703,7 @@ class Game():
                 rndSeed.microsecond
         self.rndSeed = rndSeed
         np.random.seed(rndSeed)
-        logg.debug('Random seed = %d', rndSeed)
+        gLogg.debug('Random seed = %d', rndSeed)
 
         # get inputs & set players data
         self.name = descrip
@@ -742,11 +740,11 @@ class Game():
         self.nextPlayer = self.__nextPlayer__()
 
         # talk
-        logg.info('\n%s initialized with players', self.name)
+        gLogg.info('\n%s initialized with players', self.name)
         for player in self.players:
-            logg.info(player)
-        logg.info('\nInitial discard card = (%d = %s)', *self.discardPile[0])
-        logg.info('\n%s goes first', self.players[self.currPlayer].name)
+            gLogg.info(player)
+        gLogg.info('\nInitial discard card = (%d = %s)', *self.discardPile[0])
+        gLogg.info('\n%s goes first', self.players[self.currPlayer].name)
 
     def __nextPlayer__(self):
         '''
@@ -770,7 +768,7 @@ class Game():
 
         # set the next player
         nxt = (curr + self.playersOrder) % self.playersCount
-        logg.debug('\nNext player = %s', self.players[nxt].name)
+        gLogg.debug('\nNext player = %s', self.players[nxt].name)
         return nxt
 
     def addToDiscard(self, card:Card, colorIndex:int=None):
@@ -782,7 +780,7 @@ class Game():
         '''
         # add
         self.discardPile.append(card)
-        logg.debug('\n%s added to discard', card[1])
+        gLogg.debug('\n%s added to discard', card[1])
 
         # define the deck index of the current card
         self.currCardIndex = card[0]
@@ -793,9 +791,9 @@ class Game():
         else:
             self.currColor = colorIndex
         if self.currColor is not None:
-            logg.debug('\nCurrent color = %s', COLORS[self.currColor])
+            gLogg.debug('\nCurrent color = %s', COLORS[self.currColor])
         else:
-            logg.debug('\nNo current color')
+            gLogg.debug('\nNo current color')
         # define current special & value
         self.currSpecial = card[1].specialIndex
         self.currValue = card[1].valueIndex
@@ -807,22 +805,22 @@ class Game():
         '''
 
         # talk
-        logg.info('\n%s playing', self.players[self.currPlayer].name)
+        gLogg.info('\n%s playing', self.players[self.currPlayer].name)
         # make player draw cards if necessary
         if self.currSpecial is not None:
             if self.currSpecial == 2:
                 # +2 so draw 2
-                logg.info('\n +2 on discard pile, so drawing 2')
+                gLogg.info('\n +2 on discard pile, so drawing 2')
                 for (indx, card) in enumerate(self.deck.deal(2, self)):
-                    logg.info('\nDealt %s', card[1])
+                    gLogg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==1))
         elif self.currWild is not None:
             if self.currWild == 1:
                 # wild+4, so draw 4
-                logg.info('\nWild +4 on discard pile, so drawing 4')
+                gLogg.info('\nWild +4 on discard pile, so drawing 4')
                 for (indx, card) in enumerate(self.deck.deal(4, self)):
-                    logg.info('\nDealt %s', card[1])
+                    gLogg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==3))
         # take the turn
@@ -836,7 +834,7 @@ class Game():
         status = '; '.join(['%s has %d cards worth %d points'%\
                             (player.name, player.hand.cardCount, player.hand.points)
                             for player in self.players])
-        logg.info('\n'+status)
+        gLogg.info('\n'+status)
 
     def play(self):
         '''
@@ -849,7 +847,7 @@ class Game():
         # timing
         self.gameTimeStt = dt.datetime.now()
         self.gamePerfStt = time.perf_counter()
-        logg.debug('\n%s started on %s', self.name, self.gameTimeStt.isoformat()[:16])
+        gLogg.debug('\n%s started on %s', self.name, self.gameTimeStt.isoformat()[:16])
 
         # iterate over players, each taking their turn
         while min(self.playerCardsCounts) > 0:
@@ -857,14 +855,14 @@ class Game():
 
         # post-game summary
         self.postGameSummary()
-        logg.info('\n%s won!', self.players[self.winner].name)
+        gLogg.info('\n%s won!', self.players[self.winner].name)
 
         # timing
         self.gameTimeStp = dt.datetime.now()
         self.gamePerfStp = time.perf_counter()
 
         # talk
-        logg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
+        gLogg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
                   self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
                   self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
                   self.discardSummary[0])
@@ -888,21 +886,21 @@ class Game():
         self.rebuilt += 1
 
         # get discards sans top card for new deck & shuffle
-        logg.debug('\nAdding & shuffling discard pile sans top (%d)',
+        gLogg.debug('\nAdding & shuffling discard pile sans top (%d)',
                    len(self.discardPile[:-1]))
         cards = self.discardPile[:-1]
         np.random.shuffle(cards)
         # add the remainder of the deck: 42 is just a placeholder, as it'll be stripped
-        logg.debug('\nAdding remainder of deck (%d)', self.deck.size)
+        gLogg.debug('\nAdding remainder of deck (%d)', self.deck.size)
         cards.extend([(42, card) for card in self.deck.cards[-self.deck.size:]])
         # take all cards from each player *in reverse order* and add
         for player in self.players[::-1]:
-            logg.debug('\nAdding %s cards (%d)', player.name,
+            gLogg.debug('\nAdding %s cards (%d)', player.name,
                        len(player.hand.currCards))
             cards.extend(player.hand.currCards.values())
             player.hand.currCards = {}
         # add the top card
-        logg.debug('\nAdding the top discard (1)')
+        gLogg.debug('\nAdding the top discard (1)')
         cards += [self.discardPile[-1]]
         # remember the current color if top card is a wild
         if self.discardPile[-1][1].wildIndex is not None:
@@ -916,20 +914,20 @@ class Game():
         # add top card back to discard and ensure the current color is there
         # if top card is a wild
         self.discardPile = []
-        logg.debug('\nPutting back top discard')
+        gLogg.debug('\nPutting back top discard')
         self.addToDiscard(self.deck.deal(1)[0], currColor)
 
         # deal back all cards
         for (pindx, player) in enumerate(self.players):
             # get the cards dealt & add them
             cards = self.deck.deal(self.playerCardsCounts[pindx])
-            logg.debug('\nAdding back %d cards to %s', len(cards), player.name)
+            gLogg.debug('\nAdding back %d cards to %s', len(cards), player.name)
             for (cindx, card) in enumerate(cards):
                 summary = (cindx == self.playerCardsCounts[pindx]-1)
                 player.hand.addCard(card, updateSummary=summary)
         
         # talk
-        logg.info('\nDeck rebuilt')
+        gLogg.info('\nDeck rebuilt')
 
     def cardsSummary(self, cards):
         '''
@@ -1097,7 +1095,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     # does any player have 2 or fewer cards?
     if (min(thisGame.playerCardsCounts) <= 2) & hailMary:
         playersLT2 = len([c for c in thisGame.playerCardsCounts if c <= 2])
-        logg.info('%s players have <= 2 cards', playersLT2)
+        gLogg.info('%s players have <= 2 cards', playersLT2)
         # determine what special / wild cards can defend
         sameDraw2s, sameRevSkps = parseCardsList(sameColorSpecialPlay,
                                                  draw2=True, revSkp=True)
@@ -1107,20 +1105,20 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         defenseCards = len(sameDraw2s) + len(sameRevSkps) + len(draw4s) +\
             len(diffDraw2s) + len(diffRevSkps)
 
-        logg.debug('%d cards to defend against <= 2 player', defenseCards)
+        gLogg.debug('%d cards to defend against <= 2 player', defenseCards)
         # get the next player & their card count
         nxt = thisGame.nextPlayer
         nxtCards = thisGame.playerCardsCounts[nxt]
         if nxtCards <= 2:
             # next player has <= 2 cards
-            logg.info('Next player has %d cards', nxtCards)
+            gLogg.info('Next player has %d cards', nxtCards)
             # preference order: current color draw 2, skip/reverse, draw 4,
             # other color draw 2, skip / reverse
             if defenseCards > 0:
                 if len(sameDraw2s) > 0:
                     # ensure draw 2 same color is played
                     hurtFirst = True
-                    logg.debug('Setting hurtFirst to True so draw 2 is played')
+                    gLogg.debug('Setting hurtFirst to True so draw 2 is played')
                 elif len(sameRevSkps) > 0:
                     # don't need to do anything; this will already be picked
                     pass
@@ -1128,24 +1126,24 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                     # pretend no same color value cards available
                     sameColor = 0
                     hurtFirst = True
-                    logg.debug('Setting hurtFirst to True and ignoring same color value cards so draw 4 is played')
+                    gLogg.debug('Setting hurtFirst to True and ignoring same color value cards so draw 4 is played')
                 elif len(diffDraw2s) > 0:
                     # pretend no same color value cards & no wilds; ensure draw 2 diff color is played
                     sameColor = 0
                     wilds = 0
                     diffColorPlay = diffDraw2s
-                    logg.debug('Ignoring same color value cards & wilds so diff color draw 2 is played')
+                    gLogg.debug('Ignoring same color value cards & wilds so diff color draw 2 is played')
                 elif len(diffRevSkps) > 0:
                     # pretend no same color value cards & no wilds
                     sameColor = 0
                     wilds = 0
                     diffColorPlay = diffRevSkps
-                    logg.debug('Ignoring same color value cards & wilds so diff color special is played')
+                    gLogg.debug('Ignoring same color value cards & wilds so diff color special is played')
             else:
-                logg.debug("Can't defend against next player with %d cards", nxtCards)
+                gLogg.debug("Can't defend against next player with %d cards", nxtCards)
         else:
             # someone else has <= 2 cards
-            logg.info('Unsure how to defend against non-next player with <= 2 cards')
+            gLogg.info('Unsure how to defend against non-next player with <= 2 cards')
 
 
     # choose the best card
@@ -1158,7 +1156,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                         in sameColorSpecialPlay if card[1].specialIndex < 2]
             if len(playMe) > 0:
                 bestCard = playMe[0][0]
-                logg.debug('\n2 players, play same color: %s', playMe[0][1][1])
+                gLogg.debug('\n2 players, play same color: %s', playMe[0][1][1])
             else:
                 # can't get an extra turn :-(
                 pass
@@ -1169,20 +1167,20 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             if (len(draw2s) > 0) and hurtFirst:
                 # get the first draw 2
                 bestCard = draw2s[0][0]
-                logg.debug('\nPlay same color special (hurt first): %s',
+                gLogg.debug('\nPlay same color special (hurt first): %s',
                            draw2s[0][1][1])
             else:
                 # sort specials so draw 2s are last
                 playMe.sort(key=lambda x: x[1][1].specialIndex)
                 # get the first same color special card to play            
                 bestCard = playMe[0][0]
-                logg.debug('\nPlay same color special: %s', playMe[0][1][1])
+                gLogg.debug('\nPlay same color special: %s', playMe[0][1][1])
         else:
             # just play a same color number card
             playMe = [(handIndx, card) for (handIndx, card) in sameColorPlay]
             playMe.sort(key=lambda x: x[1][1].points)
             bestCard = playMe[-1][0]
-            logg.debug('\nPlay same color: %s', playMe[-1][1][1])
+            gLogg.debug('\nPlay same color: %s', playMe[-1][1][1])
     elif wilds > 0:
         playMe = [(handIndx, card) for (handIndx, card) in wildPlay]
         # check if any draw 4s playable
@@ -1190,13 +1188,13 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         if (len(draw4s) > 0) and hurtFirst:
             # get the first draw 4
             bestCard = draw4s[0][0]
-            logg.debug('\nPlay wild (hurt first): %s', draw4s[0][1][1])
+            gLogg.debug('\nPlay wild (hurt first): %s', draw4s[0][1][1])
         else:
             # sort wilds so draw 4s are last
             playMe.sort(key=lambda x: x[1][1].points)
             # get the first wild to play
             bestCard = playMe[0][0]
-            logg.debug('\nPlay wild: %s', playMe[0][1][1])
+            gLogg.debug('\nPlay wild: %s', playMe[0][1][1])
 
         # choose the best color - the color with the most playable points
         points = [0]*len(COLORS)
@@ -1205,7 +1203,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             if card[1].colorIndex is not None:
                 points[card[1].colorIndex] += 1 if countNotPoint else card[1].points
         # get the color with the most points, then choose that color card with the most points
-        logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+        gLogg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
                                                     for (cIndx, pts) in enumerate(points)]))
         bestColor = np.argsort(points)[-1]
     # choose best diff color by total playable points
@@ -1221,7 +1219,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                     points[card[1].colorIndex] = 0
                 # add the points
                 points[card[1].colorIndex] += 1 if countNotPoint else card[1].points
-        logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+        gLogg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
                                                     for (cIndx, pts) in enumerate(points)]))
         # get the color with the most points, then choose that color's diffColor card
         bestColor = np.argsort(points)[-1]
@@ -1231,22 +1229,22 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         if (len(draw2s) > 0) & hurtFirst:
             # get the first diff color draw 2
             bestCard = draw2s[0][0]
-            logg.debug('\nPlay different color (hurt first): %s', draw2s[0][1][1])
+            gLogg.debug('\nPlay different color (hurt first): %s', draw2s[0][1][1])
         elif (len(draw2s) > 0) & (len(draw2s) < len(playMe)) & (not hurtFirst):
             ipdb.set_trace()
             # there are more diff color playables than draw 2s, so drop them
             playMe = [play for play in playMe if play[1][1].specialIndex != 2]
             playMe.sort(key=lambda x: x[1][1].points)
             bestCard = playMe[-1][0]
-            logg.debug('\nPlay different color: %s', playMe[-1][1][1])
+            gLogg.debug('\nPlay different color: %s', playMe[-1][1][1])
         else:
             # not hurting first, no draw 2s, or only draw 2s available
             playMe.sort(key=lambda x: x[1][1].points)
             bestCard = playMe[-1][0]
-            logg.debug('\nPlay different color: %s', playMe[-1][1][1])
+            gLogg.debug('\nPlay different color: %s', playMe[-1][1][1])
     else:
         # should not happen
-        logg.debug('\nNo card to play - impossible?!')
+        gLogg.debug('\nNo card to play - impossible?!')
         ipdb.set_trace()
 
     return bestCard, bestColor
@@ -1311,7 +1309,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     for card in thisPlayer.hand.currCards.values():
         if card[1].colorIndex is not None:
             points[card[1].colorIndex] += 1 if countNotPoint else card[1].points
-    logg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
+    gLogg.debug('\nPoints per color: '+','.join(['%s = %d'%(COLORS[cIndx], pts)
                                                 for (cIndx, pts) in
                                                 enumerate(np.nan_to_num(points, neginf=0))]))
     # sort descending and get the color with the most points
@@ -1321,12 +1319,12 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     directPoints = [points[colr] for colr in directColors]
     directColors = directColors[np.argsort(directPoints)[::-1]]
     # talk
-    logg.info('Best color = %s, %d points', COLORS[bestColor], points[bestColor])
+    gLogg.info('Best color = %s, %d points', COLORS[bestColor], points[bestColor])
 
     # choose the best card to play
     if bestColor == thisGame.currColor:
         # if best color is current, just use stratFinishCurrentColor
-        logg.debug('Best color is same as current, so switching strategy')
+        gLogg.debug('Best color is same as current, so switching strategy')
         # first remove addWildPoints if in the params
         sParms = thisPlayer.strategyParams.copy()
         try:
@@ -1343,19 +1341,19 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         # does any player have 2 or fewer cards?
         if (min(thisGame.playerCardsCounts) <= 2) & hailMary:
             playersLT2 = len([c for c in thisGame.playerCardsCounts if c <= 2])
-            logg.info('%s players have <= 2 cards', playersLT2)
+            gLogg.info('%s players have <= 2 cards', playersLT2)
             # determine what special / wild cards can defend
             draw4s = parseCardsList(wildPlay, draw4=True)[0]
             draw2s, revSkps = parseCardsList(sameColorSpecialPlay+diffColorPlay,
                                              draw2=True, revSkp=True)
             defenseCards = len(draw4s) + len(draw2s) + len(revSkps)
-            logg.debug('%d cards to defend against <= 2 player', defenseCards)
+            gLogg.debug('%d cards to defend against <= 2 player', defenseCards)
             # get the next player & their card count
             nxt = thisGame.nextPlayer
             nxtCards = thisGame.playerCardsCounts[nxt]
             if nxtCards <= 2:
                 # next player has <= 2 cards
-                logg.info('Next player has %d cards', nxtCards)
+                gLogg.info('Next player has %d cards', nxtCards)
                 if defenseCards > 0:
                     if len(draw4s) > 0:
                         # turn on hurt first and ignore other cards; best color already set
@@ -1364,7 +1362,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                         diffColorPlay = []
                         sameColorPlay = []
                         directColors = []
-                        logg.debug('Setting hurtFirst to True & ignoring other cards so draw 4 is played')
+                        gLogg.debug('Setting hurtFirst to True & ignoring other cards so draw 4 is played')
                     elif len(draw2s) > 0:
                         # just turn on hurt first
                         hurtFirst = True
@@ -1374,7 +1372,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                             if len([card for card in draw2s if card[1][1].colorIndex == color]) > 0:
                                 bestColor = color
                                 break
-                        logg.debug('Setting hurtFirst to True so draw 2 is played and setting color accordingly')
+                        gLogg.debug('Setting hurtFirst to True so draw 2 is played and setting color accordingly')
                     elif len(revSkps) > 0:
                         # set bestColor to the best reverse / skip that is directly playable
                         for color in directColors:
@@ -1382,13 +1380,13 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                             if len([card for card in revSkps if card[1][1].colorIndex == color]) > 0:
                                 bestColor = color
                                 break
-                        logg.debug('Setting color to %s so a reverse / skip is played',
+                        gLogg.debug('Setting color to %s so a reverse / skip is played',
                                    COLORS[bestColor])
                 else:
-                    logg.debug("Can't defend against next player with %d cards", nxtCards)
+                    gLogg.debug("Can't defend against next player with %d cards", nxtCards)
             else:
                 # someone else has <= 2 cards
-                logg.info('Unsure how to defend against non-next player with <= 2 cards')
+                gLogg.info('Unsure how to defend against non-next player with <= 2 cards')
 
         # choose the best card
         if bestColor not in directColors:
@@ -1399,13 +1397,13 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             if (len(draw4s) > 0) and hurtFirst:
                 # get the first draw 4
                 bestCard = draw4s[0][0]
-                logg.debug('\nPlay wild (hurt first): %s', draw4s[0][1][1])
+                gLogg.debug('\nPlay wild (hurt first): %s', draw4s[0][1][1])
             else:
                 # sort wilds so draw 4s are last
                 playMe.sort(key=lambda x: x[1][1].points)
                 # get the first wild to play
                 bestCard = playMe[0][0]
-                logg.debug('\nPlay wild: %s', playMe[0][1][1])
+                gLogg.debug('\nPlay wild: %s', playMe[0][1][1])
         else:
             # separate playable cards
             # test with seed 861987
@@ -1419,21 +1417,21 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                 # play a draw 2 or reverse / skip?
                 if (len(draw2sPlay) > 0) & hurtFirst:
                     bestCard = draw2sPlay[0][0]
-                    logg.debug('\nPlay: %s', draw2sPlay[0][1][1])
+                    gLogg.debug('\nPlay: %s', draw2sPlay[0][1][1])
                 elif len(revSkpsPlay) > 0:
                     bestCard = revSkpsPlay[0][0]
-                    logg.debug('\nPlay: %s', revSkpsPlay[0][1][1])
+                    gLogg.debug('\nPlay: %s', revSkpsPlay[0][1][1])
                 else:
                     bestCard = draw2sPlay[0][0]
-                    logg.debug('\nPlay: %s', draw2sPlay[0][1][1])
+                    gLogg.debug('\nPlay: %s', draw2sPlay[0][1][1])
             elif len(valuePlay) > 0:
                 # get the highest valued value card to play
                 valuePlay.sort(key=lambda x: x[1][1].points)
                 bestCard = valuePlay[-1][0]
-                logg.debug('\nPlay: %s', valuePlay[-1][1][1])
+                gLogg.debug('\nPlay: %s', valuePlay[-1][1][1])
             else:
                 # should not happen
-                logg.debug('\nNo card to play - impossible?!')
+                gLogg.debug('\nNo card to play - impossible?!')
                 ipdb.set_trace()
 
     return bestCard, bestColor
@@ -1470,8 +1468,15 @@ def designExperiment():
 
 
 ''' EXECUTE '''
-# setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
+
+# start experiment logging
+experimentSttTS = dt.datetime.now()
+loggExpName = 'Uno_Experiment_'+ experimentSttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+print('Logging experiment to ./output/%s', loggExpName)
+eLogg = getCreateLogger(name=loggExpName, file='./output/'+loggExpName+'.log', level=logLevel)
+
+# setup Monte Carlo simulation
 MCSims = 10
 rndSeed = None
 
@@ -1497,9 +1502,9 @@ MCPerfStt = time.perf_counter()
 gameRunFiles = [None]*MCSims
 for (indx, gameCFG) in enumerate(configs):
     # talk
-    print('Game %d of %d'%(indx+1, MCSims))
+    eLogg.info('Game %d of %d', (indx+1, MCSims))
     if rndSeed is not None:
-        print('Random seed = %d', rndSeed)
+        eLogg.info('Random seed = %d', rndSeed)
 
     # setup a game with this config
     sttTS = dt.datetime.now()
@@ -1509,8 +1514,8 @@ for (indx, gameCFG) in enumerate(configs):
     
     # start logger
     loggFilName = './output/%s.log'%logGameName
-    print('Logging game to %s', loggFilName)
-    logg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
+    eLogg.info('Logging game to %s', loggFilName)
+    gLogg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
     
     # setup players with randomly-selected strategies
     players = [None]*len(playerNames)
@@ -1527,7 +1532,7 @@ for (indx, gameCFG) in enumerate(configs):
         # create the player
         players[pIndx] = Player(player, strat, params)
         # talk
-        logg.info('Player %s created using strategy %s, with parameters %r',
+        gLogg.info('Player %s created using strategy %s, with parameters %r',
                   player, strat.__name__, params)
 
     # run the game
@@ -1609,23 +1614,25 @@ for (indx, gameCFG) in enumerate(configs):
     filName = loggFilName[:-4] + '.p'
     pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
                 file=open(filName, 'wb'))
-    logg.info('\nGame results serialized to %s', filName)
+    gLogg.info('\nGame results serialized to %s', filName)
+    eLogg.info('\nGame results serialized to %s', filName)
     gameRunFiles[indx] = filName
 
 # talk about any unused strategies
-print(designUseCounts)
+eLogg.info(designUseCounts)
 for strat in designUseCounts.keys():
     if 0 in designUseCounts[strat]:
-        print(strat.__name__ + ' has unused parameter set(s):')
+        eLogg.info(strat.__name__ + ' has unused parameter set(s):')
         for pIndx in range(len(designUseCounts[strat])):
             if designUseCounts[strat][pIndx] == 0:
-                print(design[strat][pIndx])
+                eLogg.info(design[strat][pIndx])
 
 # timing
 MCTimeStp = dt.datetime.now()
 MCPerfStp = time.perf_counter()
 display(resultsDF.head())
-print('Monte Carlo simulation with %d runs completed in %s(m)'%(MCSims, (MCPerfStp - MCPerfStt)/60))
+eLogg.info('Experiment with %d games completed in %s(m)',
+           MCSims, (MCPerfStp - MCPerfStt)/60)
 
 
 # serialize everything
@@ -1634,6 +1641,6 @@ experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'logLevel':logLevel,
                      'player names':playerNames, 'design':design,
                      'designUseCounts':designUseCounts, 'resultsDF':resultsDF,
                      'gameRunFiles':gameRunFiles}
-filName = './output/experiment.p'
+filName = './output/'+loggExpName+'.p'
 pickle.dump(experimentResults, file=open(filName, 'wb'))
-print('Experiment results serialized to %s'%filName)
+eLogg.info('Experiment results serialized to %s'%filName)
