@@ -1468,6 +1468,8 @@ def designExperiment():
 
 
 ''' EXECUTE '''
+# MCSims, rndSeed, playerNames, and startPlayer could be read from a config file
+# or from command-line input
 logLevel = 10 # 10=DEBUG+, 20=INFO+
 
 # start experiment logging
@@ -1498,13 +1500,17 @@ resultsDF = pd.DataFrame(index=range(MCSims))
 MCTimeStt = dt.datetime.now()
 MCPerfStt = time.perf_counter()
 
+# talk
+eLogg.info('Experiment with %d games begun on %s', MCSims, MCTimeStt.strftime('%Y%m%d_%H%M%S'))
+if rndSeed is not None:
+    eLogg.info('Random seed = %d', rndSeed)
+eLogg.info('Players = %s', playerNames)
+
 # run games serially
 gameRunFiles = [None]*MCSims
 for (indx, gameCFG) in enumerate(configs):
     # talk
     eLogg.info('Game %d of %d', (indx+1, MCSims))
-    if rndSeed is not None:
-        eLogg.info('Random seed = %d', rndSeed)
 
     # setup a game with this config
     sttTS = dt.datetime.now()
@@ -1643,4 +1649,4 @@ experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'logLevel':logLevel,
                      'gameRunFiles':gameRunFiles}
 filName = './output/'+loggExpName+'.p'
 pickle.dump(experimentResults, file=open(filName, 'wb'))
-eLogg.info('Experiment results serialized to %s'%filName)
+eLogg.info('Experiment results logged & serialized to %s.*'%filName[:-2])
