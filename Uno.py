@@ -1438,6 +1438,36 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     return bestCard, bestColor
 
 
+def designExperiment():
+    '''
+    For all strategies, compute the Cartesian product of all parameter's options
+    for use with an experiment.
+    :return design: strategy callable-keyed dict with list of parameter
+    name:value dicts
+    '''
+
+    # build all the options for each strategy
+    stratParams = {}
+    stratParams[stratFinishCurrentColor] = {'hurtFirst':[False, True],
+                                            'hailMary':[False, True],
+                                            'countNotPoint':[False, True]}
+    stratParams[stratSwitchMaxColor] = {'hurtFirst':[False, True],
+                                        'hailMary':[False, True],
+                                        'countNotPoint':[False, True],
+                                        'addWildPoints':[False,True]}
+    
+    # iterate over strategies and completely enumerate the parameters options
+    design = dict.fromkeys(stratParams.keys())
+    for strat in stratParams.keys():
+        # generate the Cartesian product of all parameters
+        prod = product(*stratParams[strat].values())
+        # create dict of parameter:value pairs
+        design[strat] = [{name:parm for name, parm in zip(stratParams[strat].keys(), params)}
+                             for params in prod]
+
+    return design
+
+
 ''' EXECUTE '''
 # setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
