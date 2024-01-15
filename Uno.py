@@ -1,5 +1,5 @@
 '''
-# TODO: build experiment design
+# TODO: build experiment design; 24 total options, how do I run with this now?
 # TODO: setup to run from command line with args
 # TODO: improve talking
 # TODO: test test test
@@ -705,6 +705,7 @@ class Game():
                 rndSeed.microsecond
         self.rndSeed = rndSeed
         np.random.seed(rndSeed)
+        logg.debug('Random seed = %d', rndSeed)
 
         # get inputs & set players data
         self.name = descrip
@@ -1472,22 +1473,19 @@ def designExperiment():
 # setup Monte Carlo simulation
 logLevel = 10 # 10=DEBUG+, 20=INFO+
 MCSims = 10
-# players
-players = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
-strategies = [stratSwitchMaxColor, stratSwitchMaxColor, stratSwitchMaxColor,
-              stratSwitchMaxColor]
-strategyParams = [{'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
-                   'addWildPoints':False},
-                   {'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
-                   'addWildPoints':False},
-                   {'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
-                   'addWildPoints':False},
-                   {'hurtFirst':False, 'hailMary':False, 'countNotPoint':False,
-                   'addWildPoints':False}]
+rndSeed = None
 
-configs = [{'players':players, 'strategies':strategies,
-            'strategyParams':strategyParams, 'start':None,
-            'descrip':'Test Game'}]*MCSims
+# generate strategy design information
+design = designExperiment()
+designUseCounts = {strat:[0]*len(params) for strat,params in design.items()}
+strats = list(design.keys())
+
+# player names
+playerNames = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
+startPlayer = None
+
+# setup to run
+configs = [{'players':playerNames, 'start':startPlayer, 'descrip':'Test Game'}]*MCSims
 allResults = [None]*MCSims
 resultsDF = pd.DataFrame(index=range(MCSims))
 
@@ -1496,25 +1494,41 @@ MCTimeStt = dt.datetime.now()
 MCPerfStt = time.perf_counter()
 
 # run games serially
+gameRunFiles = [None]*MCSims
 for (indx, gameCFG) in enumerate(configs):
     # talk
     print('Game %d of %d'%(indx+1, MCSims))
+    if rndSeed is not None:
+        print('Random seed = %d', rndSeed)
 
     # setup a game with this config
     sttTS = dt.datetime.now()
     gameDescrip = gameCFG['descrip']
     logGameName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
-        '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]    
-    players = [Player(name, strat, params) for (name, strat, params) in
-               zip(gameCFG['players'], gameCFG['strategies'],
-                   gameCFG['strategyParams'])]
-    #rndSeed = 861987
-    rndSeed = None
-
+        '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+    
     # start logger
     loggFilName = './output/%s.log'%logGameName
     print('Logging game to %s', loggFilName)
     logg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
+    
+    # setup players with randomly-selected strategies
+    players = [None]*len(playerNames)
+    stratParams = [None]*len(playerNames)
+    for (pIndx, player) in enumerate(playerNames):
+        # get random strategy & params
+        strat = strats[int(np.random.rand()>0.5)]
+        paramRnd = np.random.randint(len(design[strat]))
+        params = design[strat][paramRnd]
+        # save the selected strategy for recording after the game
+        stratParams[pIndx] = [strat, params]
+        # update strategy usage count
+        designUseCounts[strat][paramRnd] += 1
+        # create the player
+        players[pIndx] = Player(player, strat, params)
+        # talk
+        logg.info('Player %s created using strategy %s, with parameters %r',
+                  player, strat.__name__, params)
 
     # run the game
     thisGame = Game(logGameName, players, gameCFG['start'], rndSeed)
@@ -1536,16 +1550,15 @@ for (indx, gameCFG) in enumerate(configs):
     resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
     # add player-specific data
     for (pindx, _) in enumerate(players):
-        resultsDF.loc[indx, 'player%d_strat'%pindx] = gameCFG['strategies']\
-            [pindx].__name__
-        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = gameCFG['strategyParams']\
-            [pindx].get('hurtFirst', False)
-        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = gameCFG['strategyParams']\
-            [pindx].get('hailMary', False)
-        resultsDF.loc[indx, 'player%d_stratWP'%pindx] = gameCFG['strategyParams']\
-            [pindx].get('addWildPoints', False)
-        resultsDF.loc[indx, 'player%d_stratCP'%pindx] = gameCFG['strategyParams']\
-            [pindx].get('countNotPoint', False)
+        resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0]
+        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
+            get('hurtFirst', False)
+        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = stratParams[pindx][1].\
+            get('hailMary', False)
+        resultsDF.loc[indx, 'player%d_stratWP'%pindx] = stratParams[pindx][1].\
+            get('addWildPoints', False)
+        resultsDF.loc[indx, 'player%d_stratCP'%pindx] = stratParams[pindx][1].\
+            get('countNotPoint', False)
         resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
             ['player played summary'][pindx][0]
         resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
@@ -1566,17 +1579,16 @@ for (indx, gameCFG) in enumerate(configs):
             ['player remaining summary'][pindx][1]
         resultsDF.loc[indx, 'player%d_rank'%pindx] = allResults[indx]\
             ['player ranking'][pindx]
-        
     # add winner data again as separate features
     winr = allResults[indx]['winner']
-    resultsDF.loc[indx, 'winner_strat'] = gameCFG['strategies'][winr].__name__
-    resultsDF.loc[indx, 'winner_stratHF'] = gameCFG['strategyParams'][winr].\
+    resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0]
+    resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
         get('hurtFirst', False)
-    resultsDF.loc[indx, 'winner_stratHM'] = gameCFG['strategyParams'][winr].\
+    resultsDF.loc[indx, 'winner_stratHM'] = stratParams[winr][1].\
         get('hailMary', False)
-    resultsDF.loc[indx, 'winner_stratWP'] = gameCFG['strategyParams'][winr].\
+    resultsDF.loc[indx, 'winner_stratWP'] = stratParams[winr][1].\
         get('addWildPoints', False)
-    resultsDF.loc[indx, 'winner_stratCP'] = gameCFG['strategyParams'][winr].\
+    resultsDF.loc[indx, 'winner_stratCP'] = stratParams[winr][1].\
         get('countNotPoint', False)
     resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
         ['player played summary'][winr][0]
@@ -1597,10 +1609,31 @@ for (indx, gameCFG) in enumerate(configs):
     filName = loggFilName[:-4] + '.p'
     pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
                 file=open(filName, 'wb'))
-    logg.info('\nResults serialized to %s', filName)
+    logg.info('\nGame results serialized to %s', filName)
+    gameRunFiles[indx] = filName
+
+# talk about any unused strategies
+print(designUseCounts)
+for strat in designUseCounts.keys():
+    if 0 in designUseCounts[strat]:
+        print(strat.__name__ + ' has unused parameter set(s):')
+        for pIndx in range(len(designUseCounts[strat])):
+            if designUseCounts[strat][pIndx] == 0:
+                print(design[strat][pIndx])
 
 # timing
 MCTimeStp = dt.datetime.now()
 MCPerfStp = time.perf_counter()
-print('Monte Carlo simulation with %d runs completed in %s(m)'%(MCSims, (MCPerfStp - MCPerfStt)/60))
 display(resultsDF.head())
+print('Monte Carlo simulation with %d runs completed in %s(m)'%(MCSims, (MCPerfStp - MCPerfStt)/60))
+
+
+# serialize everything
+experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'logLevel':logLevel,
+                     'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
+                     'player names':playerNames, 'design':design,
+                     'designUseCounts':designUseCounts, 'resultsDF':resultsDF,
+                     'gameRunFiles':gameRunFiles}
+filName = './output/experiment.p'
+pickle.dump(experimentResults, file=open(filName, 'wb'))
+print('Experiment results serialized to %s'%filName)
