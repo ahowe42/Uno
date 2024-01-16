@@ -1,4 +1,5 @@
 '''
+# TODO: flag to count cards everywhere, never points
 # TODO: setup to run from command line with args
 # TODO: test test test
 # TODO: someday refactor strategies and how playable cards are passed
@@ -1468,8 +1469,8 @@ def designExperiment():
 
 
 ''' EXECUTE '''
-# MCSims, rndSeed, playerNames, and startPlayer could be read from a config file
-# or from command-line input
+# TODO: MCSims, rndSeed, playerNames, and startPlayer could be read from a config
+# file or from command-line input
 logLevel = 10 # 10=DEBUG+, 20=INFO+
 
 # start experiment logging
@@ -1479,7 +1480,7 @@ print('Logging experiment to ./output/%s', loggExpName)
 eLogg = getCreateLogger(name=loggExpName, file='./output/'+loggExpName+'.log', level=logLevel)
 
 # setup Monte Carlo simulation
-MCSims = 10
+MCSims = 100
 rndSeed = None
 
 # generate strategy design information
@@ -1531,15 +1532,16 @@ for (indx, gameCFG) in enumerate(configs):
         strat = strats[int(np.random.rand()>0.5)]
         paramRnd = np.random.randint(len(design[strat]))
         params = design[strat][paramRnd]
-        # save the selected strategy for recording after the game
-        stratParams[pIndx] = [strat, params]
+        # build strat+params string
+        stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
+        # save the selected strat+params for recording after the game
+        stratParams[pIndx] = [strat.__name__, params, stratStr]
         # update strategy usage count
         designUseCounts[strat][paramRnd] += 1
         # create the player
         players[pIndx] = Player(player, strat, params)
         # talk
-        gLogg.info('Player %s created using strategy %s, with parameters %r',
-                  player, strat.__name__, params)
+        gLogg.info('Player %s created using strategy %s', player, stratStr)
 
     # run the game
     thisGame = Game(logGameName, players, gameCFG['start'], rndSeed)
@@ -1561,6 +1563,7 @@ for (indx, gameCFG) in enumerate(configs):
     resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
     # add player-specific data
     for (pindx, _) in enumerate(players):
+        resultsDF.loc[indx, 'player%d_strat_params'%pindx] = stratParams[pindx][2]
         resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0]
         resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
             get('hurtFirst', False)
@@ -1592,6 +1595,7 @@ for (indx, gameCFG) in enumerate(configs):
             ['player ranking'][pindx]
     # add winner data again as separate features
     winr = allResults[indx]['winner']
+    resultsDF.loc[indx, 'winner_strat_params'] = stratParams[winr][2]
     resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0]
     resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
         get('hurtFirst', False)
@@ -1624,6 +1628,17 @@ for (indx, gameCFG) in enumerate(configs):
     eLogg.info('\nGame results serialized to %s', filName)
     gameRunFiles[indx] = filName
 
+# compute some possibly-useful data
+# map strat+params to integers
+uniqStrats = np.unique(resultsDF[[c for c in resultsDF if 'strat_params' in c]].values)
+stratMap = {uniq:sindx for (sindx,uniq) in enumerate(uniqStrats)}
+resultsDF['winner_strat_params_int'] = resultsDF['winner_strat_params'].map(stratMap)
+# winner started the game flag
+resultsDF['winner_started'] = resultsDF['winner'] == resultsDF['start']
+
+# show some data
+display(resultsDF.head())
+
 # talk about any unused strategies
 eLogg.info(designUseCounts)
 for strat in designUseCounts.keys():
@@ -1633,10 +1648,15 @@ for strat in designUseCounts.keys():
             if designUseCounts[strat][pIndx] == 0:
                 eLogg.info(design[strat][pIndx])
 
+# winner summary
+print('Winner counts by strategy and start')
+winSummary = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
+    ['winner'].count().sort_values(ascending=False)
+display(winSummary)
+
 # timing
 MCTimeStp = dt.datetime.now()
 MCPerfStp = time.perf_counter()
-display(resultsDF.head())
 eLogg.info('Experiment with %d games completed in %s(m)',
            MCSims, (MCPerfStp - MCPerfStt)/60)
 
@@ -1646,7 +1666,7 @@ experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'logLevel':logLevel,
                      'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
                      'player names':playerNames, 'design':design,
                      'designUseCounts':designUseCounts, 'resultsDF':resultsDF,
-                     'gameRunFiles':gameRunFiles}
+                     'winSummary':winSummary, 'gameRunFiles':gameRunFiles}
 filName = './output/'+loggExpName+'.p'
 pickle.dump(experimentResults, file=open(filName, 'wb'))
 eLogg.info('Experiment results logged & serialized to %s.*'%filName[:-2])
