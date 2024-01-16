@@ -3,11 +3,11 @@ This is a simulator for the card game Uno. This simulator is designed to run an 
 
 Each simulated game saves text output about what's going on to a timestamped logged file. A plethora of game information and results is also pickled to a .p file with the same timestamp. In addition, progress and summary text output is saved to a timestamped experiment file. Experiment results are also pickled to a .p file with the same timestamp.
 
-## Python requirements
-I have developed and tested this with python 3.10 on Ubuntu 22 LTS. See requirements.txt.
+## Python Requirements
+I have developed and tested this with python 3.10 on Ubuntu 22 LTS. See [package requirements file](./requirements.txt).
 
 ## Execution
-This simulator is designed to be run from the command line with several arguments as `python3 ./Uno.py`, with arguments as listed below. Running `python3 ./Uno.py --help` will print some brief help information on the arguments. None of the arguments are validated at all. If they don't make sense, the results will be crap or the simulator will crash.
+This simulator - wholly contained in [Uno.py](./Uno.py) is designed to be run from the command line with several arguments as `python3 ./Uno.py`, with arguments as listed below. Running `python3 ./Uno.py --help` will print some brief help information on the arguments. None of the arguments are validated at all. If they don't make sense, the results will be crap or the simulator will crash.
 
 ### Simulation Parameters
 - `--sims`: This is the number of simulated games in the experiment.
@@ -35,4 +35,9 @@ Executing, for example `python3 ./Uno.py --sims 10 --player 'Ben Dover' --player
 - `countNotPoint`: see above
 - `addWildPoints`: With `addWildPoints` set to `True`, when counting points to determine the best color to switch to, if a wild must be played first, it's points are added to that color's total points. Note that `countNotPoint` is `True` or the simulation is run with `--points False`, this only adds 1 card.
 
-# Output
+## Output
+### Game
+blah
+
+### Experiment
+blah
