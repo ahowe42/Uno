@@ -1,10 +1,10 @@
 '''
-# TODO: test test test
-# TODO: someday refactor strategies and how playable cards are passed
 # TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
 with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
         results[indx] = expd
+# TODO: test test test
+# TODO: someday refactor strategies and how playable cards are passed
 '''
 from itertools import product
 from collections import OrderedDict
@@ -1571,6 +1571,7 @@ if __name__ == '__main__':
     allResults = [None]*MCSims
     resultsDF = pd.DataFrame(index=range(MCSims))
     gameRunFiles = [None]*MCSims
+    # TODO: can everything here be run in parallel?
     for indx in range(MCSims):
         # talk
         eLogg.info('Game %d of %d', (indx+1, MCSims))
