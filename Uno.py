@@ -1425,6 +1425,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                         hurtFirst = True
                         diffColorPlay = []
                         sameColorPlay = []
+                        sameColorSpecialPlay = []
                         directColors = []
                         gLogg.debug('Setting hurtFirst to True & ignoring other cards so draw 4 is played')
                     elif len(draw2s) > 0:
@@ -1472,8 +1473,8 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
             # separate playable cards
             # test with seed 861987
             draw2sPlay, revSkpsPlay, specialPlay, valuePlay = parseCardsList(
-                [play for play in diffColorPlay+sameColorPlay if
-                 play[1][1].colorIndex==bestColor], draw2=True, revSkp=True,
+                [play for play in diffColorPlay+sameColorPlay+sameColorSpecialPlay
+                 if play[1][1].colorIndex==bestColor], draw2=True, revSkp=True,
                  spec=True, valu=True)
             # TODO: note that this strategy won't currently try to play 2 cards;
             # this should be added later
@@ -1533,7 +1534,14 @@ def designExperiment():
 
 ''' EXECUTE '''
 if __name__ == '__main__':
-    # get the arguments
+    # get the parameters
+    #MCSims = 500
+    #playerNames =['A', 'B', 'C', 'D']
+    #startPlayer = None
+    #rndSeed = None
+    #cardPoints = True
+    #experDescrip = gameDescrip = 'Test'
+    #debug = True
     MCSims, playerNames, startPlayer, rndSeed, cardPoints, experDescrip, gameDescrip, debug = parseArgs()
     logLevel = [20, 10][int(debug)] # 10=DEBUG+, 20=INFO+
 
@@ -1574,7 +1582,7 @@ if __name__ == '__main__':
     # TODO: can everything here be run in parallel?
     for indx in range(MCSims):
         # talk
-        eLogg.info('Game %d of %d', (indx+1, MCSims))
+        eLogg.info('Game %d of %d', indx+1, MCSims)
 
         # setup a game with this config
         sttTS = dt.datetime.now()
@@ -1717,9 +1725,6 @@ if __name__ == '__main__':
     # timing
     MCTimeStp = dt.datetime.now()
     MCPerfStp = time.perf_counter()
-    eLogg.info('Experiment with %d games completed in %s(m)',
-            MCSims, (MCPerfStp - MCPerfStt)/60)
-
 
     # serialize everything
     experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'cardPoints':cardPoints,
