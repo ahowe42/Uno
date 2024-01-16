@@ -1,9 +1,11 @@
 '''
+# TODO: add requirements file.
+# TODO: allow definition of player's strategies
 # TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
 with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
         results[indx] = expd
-# TODO: test test test
+# TODO: can I add an option to read parameters from a dotenv file?
 # TODO: someday refactor strategies and how playable cards are passed
 '''
 from itertools import product
@@ -108,7 +110,7 @@ def parseArgs():
                         help='Description test for games (default=Test)')
     parser.add_argument('--eDescrip', type=str, default='Test',
                         help='Description test for experiment (default=Test)')
-    parser.add_argument('--startP', type=int, default=None,
+    parser.add_argument('--startPlayer', type=int, default=None,
                         help='Starting player index (default=None)')
     # required
     parser.add_argument('--sims', type=int, help='Number of simulations in experiment')
@@ -122,7 +124,7 @@ def parseArgs():
     cardPoints = args.points
     gameDescrip = args.gDescrip
     experDescrip = args.eDescrip
-    startPlayer = args.startP
+    startPlayer = args.startPlayer
     MCSims = args.sims
     playerNames = args.player
 
