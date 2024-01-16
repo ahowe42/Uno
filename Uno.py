@@ -1,5 +1,4 @@
 '''
-# TODO: setup to run from command line with args
 # TODO: test test test
 # TODO: someday refactor strategies and how playable cards are passed
 # TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
@@ -8,15 +7,17 @@ with multiprocessing.Pool() as pool:
         results[indx] = expd
 '''
 from itertools import product
+from collections import OrderedDict
+import pickle
+import argparse
 import logging
 import time
 import datetime as dt
 #import multiprocessing
+from IPython.display import display
 import numpy as np
 import ipdb
 import re
-from collections import OrderedDict
-import pickle
 import pandas as pd
 
 pd.set_option('display.max_columns', None)
@@ -41,6 +42,7 @@ SPECIALS_POINTS = [20, 20, 20]
 WILDS_POINTS = [50, 100]
 
 
+# general functions
 def getCreateLogger(name:str, file:str=None, level:int=0):
     '''
     Get a logging object, creating it if non-existent.
@@ -81,6 +83,53 @@ def getCreateLogger(name:str, file:str=None, level:int=0):
     return logger
 
 
+def parseArgs():
+    '''
+    Function to parse the command line inputs.
+    :return MCSims: integer number of simulations in experiment
+    :return playerNames: list of string player names 
+    :return startPlayer: optional (None) starting player index
+    :return rndSeed: optional (None) seed for PRNG
+    :return cardPoints: optional (True) flag to give cards points or not
+    :return experDescrip: optional ('Test') experiment description
+    :return gameDescrip: optional ('Test') game description
+    :return debug: optional (False) flag to add debugging output to logs
+    '''
+
+    # setup to get the arguments from the cmdline
+    parser = argparse.ArgumentParser(description='Uno Simulator')
+    # optional
+    parser.add_argument('--debug', type=bool, default=False,
+                        help='Print extra debugging messages to logs (default=False)')
+    parser.add_argument('--seed', type=int, default=None, help='PRNG seed (default=None)')
+    parser.add_argument('--points', type=bool, default=True,
+                        help='Flag to give cards point values (default=True)')
+    parser.add_argument('--gDescrip', type=str, default='Test',
+                        help='Description test for games (default=Test)')
+    parser.add_argument('--eDescrip', type=str, default='Test',
+                        help='Description test for experiment (default=Test)')
+    parser.add_argument('--startP', type=int, default=None,
+                        help='Starting player index (default=None)')
+    # required
+    parser.add_argument('--sims', type=int, help='Number of simulations in experiment')
+    parser.add_argument('--player', type=str, action='append',
+    help='Name of player, must be at least 2')
+
+    # parse them
+    args = parser.parse_args()
+    debug = args.debug
+    rndSeed = args.seed
+    cardPoints = args.points
+    gameDescrip = args.gDescrip
+    experDescrip = args.eDescrip
+    startPlayer = args.startP
+    MCSims = args.sims
+    playerNames = args.player
+
+    return MCSims, playerNames, startPlayer, rndSeed, cardPoints, experDescrip, gameDescrip, debug
+
+
+# Game object classes and functions
 class Card():
     def __init__(self, color:int, value:int, specialWild:int=None,
                  cardPoints:bool=True):
@@ -696,7 +745,7 @@ class Player():
 
 
 class Game():
-    def __init__(self, descrip:str, players:list, start:int=0, countPoints:bool=True,
+    def __init__(self, descrip:str, players:list, start:int=0, cardPoints:bool=True,
                  rndSeed:int=None):
         '''
         Initialize a game of Uno.
@@ -704,7 +753,7 @@ class Game():
         :param players: list of player objects
         :param start: optional (default=None) index of starting player; if not
             provided, starter is randomly selected
-        :param countPoints: optional (default=True) flag to count card points
+        :param cardPoints: optional (default=True) flag to give cards points
             if False, every card is only worth 1 point
         :param rndSeed: optional (default=None) seed for numpy prng
         '''
@@ -723,12 +772,12 @@ class Game():
         self.players = players
         self.playersCount = len(players)
         self.playersOrder = 1 # 1 or -1
-        self.countPoints = countPoints
+        self.cardPoints = cardPoints
 
         # get the Deck & put the top card on the pile
         self.rebuilt = 0
         self.rebuiltCards = []
-        self.deck = Deck(cardPoints=self.countPoints)
+        self.deck = Deck(cardPoints=self.cardPoints)
         self.discardPile = []
         self.addToDiscard(self.deck.deal(1)[0])
 
@@ -1063,6 +1112,7 @@ def parseCardsList(cardsInHandList:list, draw2:int=False, revSkp:int=False,
     return results
 
 
+# Game strategy functions
 def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
                             sameColorSpecialPlay, wildPlay, diffColorPlay,
                             hurtFirst:bool=False, hailMary:bool=False,
@@ -1483,20 +1533,11 @@ def designExperiment():
 
 ''' EXECUTE '''
 if __name__ == '__main__':
-    # TODO: these parameters should be read from a config file or from command-line input
-    # setup experiment
-    MCSims = 10
-    rndSeed = None
-    countPoints = False
-    # player names
-    playerNames = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
-    startPlayer = None
-    # descrips
-    gameDescrip = 'Test'
-    experDescrip = 'Test'
+    # get the arguments
+    MCSims, playerNames, startPlayer, rndSeed, cardPoints, experDescrip, gameDescrip, debug = parseArgs()
+    logLevel = [20, 10][int(debug)] # 10=DEBUG+, 20=INFO+
 
     # start experiment logging
-    logLevel = 10 # 10=DEBUG+, 20=INFO+
     experSttTS = dt.datetime.now()
     loggExpName = 'Uno_Experiment_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_',
                                            string=experDescrip)+'_'+\
@@ -1517,7 +1558,7 @@ if __name__ == '__main__':
     # talk
     eLogg.info('Experiment %s with %d games begun on %s', experDescrip, MCSims,
                MCTimeStt.strftime('%Y%m%d_%H%M%S'))
-    eLogg.info('Cards have points = %s', countPoints)
+    eLogg.info('Cards have points = %s', cardPoints)
     if rndSeed is not None:
         eLogg.info('Random seed = %d', rndSeed)
     eLogg.info('Players = %s', playerNames)
@@ -1564,14 +1605,14 @@ if __name__ == '__main__':
             gLogg.info('Player %s created using strategy %s', player, stratStr)
 
         # run the game
-        thisGame = Game(loggGameName, players, startPlayer, countPoints, rndSeed)
+        thisGame = Game(loggGameName, players, startPlayer, cardPoints, rndSeed)
         allResults[indx] = thisGame.play()
 
         # update the results dataframe
         resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
         resultsDF.loc[indx, 'num_players'] = len(players)
         resultsDF.loc[indx, 'start_player'] = allResults[indx]['start']
-        resultsDF.loc[indx, 'countPoints'] = countPoints
+        resultsDF.loc[indx, 'cardPoints'] = cardPoints
         resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
         resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
             allResults[indx]['timing'][1]
@@ -1658,7 +1699,7 @@ if __name__ == '__main__':
     resultsDF['winner_started'] = resultsDF['winner'] == resultsDF['start_player']
 
     # talk about any unused strategies
-    eLogg.info(designUseCounts)
+    eLogg.info({strat.__name__:params for (strat,params) in designUseCounts.items()})
     for strat in designUseCounts.keys():
         if 0 in designUseCounts[strat]:
             eLogg.info(strat.__name__ + ' has unused parameter set(s):')
@@ -1680,7 +1721,7 @@ if __name__ == '__main__':
 
 
     # serialize everything
-    experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'countPoints':countPoints,
+    experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'cardPoints':cardPoints,
                          'startPlayer':startPlayer,'player names':playerNames,
                          'logLevel':logLevel,
                          'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
