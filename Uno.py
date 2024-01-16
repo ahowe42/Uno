@@ -1,5 +1,4 @@
 '''
-# TODO: flag to count cards everywhere, never points
 # TODO: setup to run from command line with args
 # TODO: test test test
 # TODO: someday refactor strategies and how playable cards are passed
@@ -12,7 +11,7 @@ from itertools import product
 import logging
 import time
 import datetime as dt
-import multiprocessing
+#import multiprocessing
 import numpy as np
 import ipdb
 import re
@@ -83,12 +82,15 @@ def getCreateLogger(name:str, file:str=None, level:int=0):
 
 
 class Card():
-    def __init__(self, color:int, value:int, specialWild:int=None):
+    def __init__(self, color:int, value:int, specialWild:int=None,
+                 cardPoints:bool=True):
         '''
         Define a card.
         :param color: integer in allowed range
         :param value: integer in allowed range
         :param specialWild: integer in allowed range
+        :param cardPoints: optional (default=True) flag to give cards points
+            if False, every card is only worth 1 point
         '''
 
         # check consistency between special & value
@@ -131,12 +133,15 @@ class Card():
                 self.specialIndex = specialWild
 
         # get the card points
-        if self.wildIndex is not None:
-            self.points = WILDS_POINTS[self.wildIndex]
-        elif self.specialIndex is not None:
-            self.points = SPECIALS_POINTS[self.specialIndex]
+        if cardPoints:
+            if self.wildIndex is not None:
+                self.points = WILDS_POINTS[self.wildIndex]
+            elif self.specialIndex is not None:
+                self.points = SPECIALS_POINTS[self.specialIndex]
+            else:
+                self.points = self.valueIndex
         else:
-            self.points = self.valueIndex
+            self.points = 1
 
         # give the card a name
         if self.colorIndex is not None:
@@ -221,7 +226,8 @@ class Card():
 
 
 class Deck():
-    def __init__(self, cards:list[Card]=None, shuffle:bool=True):
+    def __init__(self, cards:list[Card]=None, shuffle:bool=True,
+                 cardPoints:bool=True):
         '''
         Build the deck of Uno cards. For each color in a standard deck, there
         are 1 0 2 1-9's, and 2 non-wild special cards. There are 4 of each wild.
@@ -230,6 +236,8 @@ class Deck():
             None, the deck is built
         :param shuffle: optional (default=True) flag indicating whether or not
             to shuffle the cards generated
+        :param cardPoints: optional (default=True) flag to give cards points
+            if False, every card is only worth 1 point
         '''
 
         if cards is None:
@@ -240,13 +248,14 @@ class Deck():
             wilds = list(range(LENWILDS))
 
             # get 1 of each number card == 0 & 2 of each number card > 1
-            numbers = [Card(colr, valu, None) for (colr, valu) in product(colors,
-                sorted([values[0]]*ZEROS_COUNT + values[1:]*NUMBERS_COUNT))]
+            numbers = [Card(colr, valu, None, cardPoints) for (colr, valu) in
+                       product(colors, sorted([values[0]]*ZEROS_COUNT +\
+                                              values[1:]*NUMBERS_COUNT))]
             # get 2 of each special card
-            nonwilds = [Card(colr, None, spec) for (colr, spec) in product(colors,
-                sorted(specials*SPECIALS_COUNT))]
+            nonwilds = [Card(colr, None, spec, cardPoints) for (colr, spec) in
+                        product(colors, sorted(specials*SPECIALS_COUNT))]
             # get 4 each of wilds
-            wilds = [Card(None, None, wld+LENSPECIALS) for wld in
+            wilds = [Card(None, None, wld+LENSPECIALS, cardPoints) for wld in
                 sorted(wilds*WILDS_COUNT)]
 
             # shuffle or put in nice order
@@ -687,13 +696,16 @@ class Player():
 
 
 class Game():
-    def __init__(self, descrip:str, players:list, start:int=0, rndSeed:int=None):
+    def __init__(self, descrip:str, players:list, start:int=0, countPoints:bool=True,
+                 rndSeed:int=None):
         '''
         Initialize a game of Uno.
         :parm descrip: string description of game
         :param players: list of player objects
         :param start: optional (default=None) index of starting player; if not
             provided, starter is randomly selected
+        :param countPoints: optional (default=True) flag to count card points
+            if False, every card is only worth 1 point
         :param rndSeed: optional (default=None) seed for numpy prng
         '''
 
@@ -711,11 +723,12 @@ class Game():
         self.players = players
         self.playersCount = len(players)
         self.playersOrder = 1 # 1 or -1
+        self.countPoints = countPoints
 
         # get the Deck & put the top card on the pile
         self.rebuilt = 0
         self.rebuiltCards = []
-        self.deck = Deck()
+        self.deck = Deck(cardPoints=self.countPoints)
         self.discardPile = []
         self.addToDiscard(self.deck.deal(1)[0])
 
@@ -1469,31 +1482,29 @@ def designExperiment():
 
 
 ''' EXECUTE '''
-# TODO: MCSims, rndSeed, playerNames, and startPlayer could be read from a config
-# file or from command-line input
-logLevel = 10 # 10=DEBUG+, 20=INFO+
+# TODO: these parameters should be read from a config file or from command-line input
+# setup experiment
+MCSims = 10
+rndSeed = None
+countPoints = False
+gameDescrip = 'Test'
+# player names
+playerNames = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
+startPlayer = None
 
 # start experiment logging
+logLevel = 10 # 10=DEBUG+, 20=INFO+
 experimentSttTS = dt.datetime.now()
 loggExpName = 'Uno_Experiment_'+ experimentSttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
 print('Logging experiment to ./output/%s', loggExpName)
 eLogg = getCreateLogger(name=loggExpName, file='./output/'+loggExpName+'.log', level=logLevel)
-
-# setup Monte Carlo simulation
-MCSims = 100
-rndSeed = None
 
 # generate strategy design information
 design = designExperiment()
 designUseCounts = {strat:[0]*len(params) for strat,params in design.items()}
 strats = list(design.keys())
 
-# player names
-playerNames = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
-startPlayer = None
-
 # setup to run
-configs = [{'players':playerNames, 'start':startPlayer, 'descrip':'Test Game'}]*MCSims
 allResults = [None]*MCSims
 resultsDF = pd.DataFrame(index=range(MCSims))
 
@@ -1509,14 +1520,13 @@ eLogg.info('Players = %s', playerNames)
 
 # run games serially
 gameRunFiles = [None]*MCSims
-for (indx, gameCFG) in enumerate(configs):
+for indx in range(MCSims):
     # talk
     eLogg.info('Game %d of %d', (indx+1, MCSims))
 
     # setup a game with this config
     sttTS = dt.datetime.now()
-    gameDescrip = gameCFG['descrip']
-    logGameName = 'Uno_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
+    logGameName = 'Uno_Game_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
         '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
     
     # start logger
@@ -1544,13 +1554,14 @@ for (indx, gameCFG) in enumerate(configs):
         gLogg.info('Player %s created using strategy %s', player, stratStr)
 
     # run the game
-    thisGame = Game(logGameName, players, gameCFG['start'], rndSeed)
+    thisGame = Game(logGameName, players, startPlayer, countPoints, rndSeed)
     allResults[indx] = thisGame.play()
 
     # update the results dataframe
     resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
     resultsDF.loc[indx, 'num_players'] = len(players)
-    resultsDF.loc[indx, 'start'] = allResults[indx]['start']
+    resultsDF.loc[indx, 'start_player'] = allResults[indx]['start']
+    resultsDF.loc[indx, 'countPoints'] = countPoints
     resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
     resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
         allResults[indx]['timing'][1]
@@ -1634,7 +1645,7 @@ uniqStrats = np.unique(resultsDF[[c for c in resultsDF if 'strat_params' in c]].
 stratMap = {uniq:sindx for (sindx,uniq) in enumerate(uniqStrats)}
 resultsDF['winner_strat_params_int'] = resultsDF['winner_strat_params'].map(stratMap)
 # winner started the game flag
-resultsDF['winner_started'] = resultsDF['winner'] == resultsDF['start']
+resultsDF['winner_started'] = resultsDF['winner'] == resultsDF['start_player']
 
 # show some data
 display(resultsDF.head())
