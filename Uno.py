@@ -1482,202 +1482,215 @@ def designExperiment():
 
 
 ''' EXECUTE '''
-# TODO: these parameters should be read from a config file or from command-line input
-# setup experiment
-MCSims = 10
-rndSeed = None
-countPoints = False
-gameDescrip = 'Test'
-# player names
-playerNames = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
-startPlayer = None
+if __name__ == '__main__':
+    # TODO: these parameters should be read from a config file or from command-line input
+    # setup experiment
+    MCSims = 10
+    rndSeed = None
+    countPoints = False
+    # player names
+    playerNames = ['Ben Dover', 'Mike Rotch', 'Hugh Jass', 'Eileen Dover']
+    startPlayer = None
+    # descrips
+    gameDescrip = 'Test'
+    experDescrip = 'Test'
 
-# start experiment logging
-logLevel = 10 # 10=DEBUG+, 20=INFO+
-experimentSttTS = dt.datetime.now()
-loggExpName = 'Uno_Experiment_'+ experimentSttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
-print('Logging experiment to ./output/%s', loggExpName)
-eLogg = getCreateLogger(name=loggExpName, file='./output/'+loggExpName+'.log', level=logLevel)
+    # start experiment logging
+    logLevel = 10 # 10=DEBUG+, 20=INFO+
+    experSttTS = dt.datetime.now()
+    loggExpName = 'Uno_Experiment_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_',
+                                           string=experDescrip)+'_'+\
+                                            experSttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+    print('Logging experiment to ./output/%s', loggExpName)
+    eLogg = getCreateLogger(name=loggExpName, file='./output/'+loggExpName+'.log',
+                            level=logLevel)
+    
+    # generate strategy design information
+    design = designExperiment()
+    designUseCounts = {strat:[0]*len(params) for strat,params in design.items()}
+    strats = list(design.keys())
 
-# generate strategy design information
-design = designExperiment()
-designUseCounts = {strat:[0]*len(params) for strat,params in design.items()}
-strats = list(design.keys())
+    # timing
+    MCTimeStt = dt.datetime.now()
+    MCPerfStt = time.perf_counter()
 
-# setup to run
-allResults = [None]*MCSims
-resultsDF = pd.DataFrame(index=range(MCSims))
-
-# timing
-MCTimeStt = dt.datetime.now()
-MCPerfStt = time.perf_counter()
-
-# talk
-eLogg.info('Experiment with %d games begun on %s', MCSims, MCTimeStt.strftime('%Y%m%d_%H%M%S'))
-if rndSeed is not None:
-    eLogg.info('Random seed = %d', rndSeed)
-eLogg.info('Players = %s', playerNames)
-
-# run games serially
-gameRunFiles = [None]*MCSims
-for indx in range(MCSims):
     # talk
-    eLogg.info('Game %d of %d', (indx+1, MCSims))
+    eLogg.info('Experiment %s with %d games begun on %s', experDescrip, MCSims,
+               MCTimeStt.strftime('%Y%m%d_%H%M%S'))
+    eLogg.info('Cards have points = %s', countPoints)
+    if rndSeed is not None:
+        eLogg.info('Random seed = %d', rndSeed)
+    eLogg.info('Players = %s', playerNames)
+    if startPlayer is not None:
+        eLogg.info('Starting player = %d', startPlayer)
+    else:
+        eLogg.info('Starting player = randomized')
 
-    # setup a game with this config
-    sttTS = dt.datetime.now()
-    logGameName = 'Uno_Game_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
-        '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
-    
-    # start logger
-    loggFilName = './output/%s.log'%logGameName
-    eLogg.info('Logging game to %s', loggFilName)
-    gLogg = getCreateLogger(name=logGameName, file=loggFilName, level=logLevel)
-    
-    # setup players with randomly-selected strategies
-    players = [None]*len(playerNames)
-    stratParams = [None]*len(playerNames)
-    for (pIndx, player) in enumerate(playerNames):
-        # get random strategy & params
-        strat = strats[int(np.random.rand()>0.5)]
-        paramRnd = np.random.randint(len(design[strat]))
-        params = design[strat][paramRnd]
-        # build strat+params string
-        stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
-        # save the selected strat+params for recording after the game
-        stratParams[pIndx] = [strat.__name__, params, stratStr]
-        # update strategy usage count
-        designUseCounts[strat][paramRnd] += 1
-        # create the player
-        players[pIndx] = Player(player, strat, params)
+    # run games serially
+    allResults = [None]*MCSims
+    resultsDF = pd.DataFrame(index=range(MCSims))
+    gameRunFiles = [None]*MCSims
+    for indx in range(MCSims):
         # talk
-        gLogg.info('Player %s created using strategy %s', player, stratStr)
+        eLogg.info('Game %d of %d', (indx+1, MCSims))
 
-    # run the game
-    thisGame = Game(logGameName, players, startPlayer, countPoints, rndSeed)
-    allResults[indx] = thisGame.play()
+        # setup a game with this config
+        sttTS = dt.datetime.now()
+        loggGameName = 'Uno_Game_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
+            '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+        
+        # start logger
+        loggFilName = './output/%s.log'%loggGameName
+        eLogg.info('Logging game to %s', loggFilName)
+        gLogg = getCreateLogger(name=loggGameName, file=loggFilName, level=logLevel)
+        
+        # setup players with randomly-selected strategies
+        players = [None]*len(playerNames)
+        stratParams = [None]*len(playerNames)
+        for (pIndx, player) in enumerate(playerNames):
+            # get random strategy & params
+            strat = strats[int(np.random.rand()>0.5)]
+            paramRnd = np.random.randint(len(design[strat]))
+            params = design[strat][paramRnd]
+            # build strat+params string
+            stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
+            # save the selected strat+params for recording after the game
+            stratParams[pIndx] = [strat.__name__, params, stratStr]
+            # update strategy usage count
+            designUseCounts[strat][paramRnd] += 1
+            # create the player
+            players[pIndx] = Player(player, strat, params)
+            # talk
+            gLogg.info('Player %s created using strategy %s', player, stratStr)
 
-    # update the results dataframe
-    resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
-    resultsDF.loc[indx, 'num_players'] = len(players)
-    resultsDF.loc[indx, 'start_player'] = allResults[indx]['start']
-    resultsDF.loc[indx, 'countPoints'] = countPoints
-    resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
-    resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
-        allResults[indx]['timing'][1]
-    resultsDF.loc[indx, 'cards_played'] = allResults[indx]['discard summary'][0]
-    resultsDF.loc[indx, 'points_played'] = allResults[indx]['discard summary'][1]
-    resultsDF.loc[indx, 'wilds_played'] = allResults[indx]['discard summary'][-1][0]
-    resultsDF.loc[indx, 'wildplus4s_played'] = allResults[indx]['discard summary'][-1][1]
-    resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
-    resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
-    resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
-    # add player-specific data
-    for (pindx, _) in enumerate(players):
-        resultsDF.loc[indx, 'player%d_strat_params'%pindx] = stratParams[pindx][2]
-        resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0]
-        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
+        # run the game
+        thisGame = Game(loggGameName, players, startPlayer, countPoints, rndSeed)
+        allResults[indx] = thisGame.play()
+
+        # update the results dataframe
+        resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
+        resultsDF.loc[indx, 'num_players'] = len(players)
+        resultsDF.loc[indx, 'start_player'] = allResults[indx]['start']
+        resultsDF.loc[indx, 'countPoints'] = countPoints
+        resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
+        resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
+            allResults[indx]['timing'][1]
+        resultsDF.loc[indx, 'cards_played'] = allResults[indx]['discard summary'][0]
+        resultsDF.loc[indx, 'points_played'] = allResults[indx]['discard summary'][1]
+        resultsDF.loc[indx, 'wilds_played'] = allResults[indx]['discard summary'][-1][0]
+        resultsDF.loc[indx, 'wildplus4s_played'] = allResults[indx]['discard summary'][-1][1]
+        resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
+        resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
+        resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
+        # add player-specific data
+        for (pindx, _) in enumerate(players):
+            resultsDF.loc[indx, 'player%d_strat_params'%pindx] = stratParams[pindx][2]
+            resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0]
+            resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
+                get('hurtFirst', False)
+            resultsDF.loc[indx, 'player%d_stratHM'%pindx] = stratParams[pindx][1].\
+                get('hailMary', False)
+            resultsDF.loc[indx, 'player%d_stratWP'%pindx] = stratParams[pindx][1].\
+                get('addWildPoints', False)
+            resultsDF.loc[indx, 'player%d_stratCP'%pindx] = stratParams[pindx][1].\
+                get('countNotPoint', False)
+            resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
+                ['player played summary'][pindx][0]
+            resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
+                ['player played summary'][pindx][1]
+            resultsDF.loc[indx, 'player%d_wilds_played'%pindx] = allResults[indx]\
+                ['player played summary'][pindx][-1][0]
+            resultsDF.loc[indx, 'player%d_wildplus4s_played'%pindx] = allResults[indx]\
+                ['player played summary'][pindx][-1][1]
+            resultsDF.loc[indx, 'player%d_revs_played'%pindx] = allResults[indx]\
+                ['player played summary'][pindx][-2][0]
+            resultsDF.loc[indx, 'player%d_skps_played'%pindx] = allResults[indx]\
+                ['player played summary'][pindx][-2][1]
+            resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
+                ['player played summary'][pindx][-2][2]
+            resultsDF.loc[indx, 'player%d_remain_cards'%pindx] = allResults[indx]\
+                ['player remaining summary'][pindx][0]
+            resultsDF.loc[indx, 'player%d_remain_points'%pindx] = allResults[indx]\
+                ['player remaining summary'][pindx][1]
+            resultsDF.loc[indx, 'player%d_rank'%pindx] = allResults[indx]\
+                ['player ranking'][pindx]
+        # add winner data again as separate features
+        winr = allResults[indx]['winner']
+        resultsDF.loc[indx, 'winner_strat_params'] = stratParams[winr][2]
+        resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0]
+        resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
             get('hurtFirst', False)
-        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = stratParams[pindx][1].\
+        resultsDF.loc[indx, 'winner_stratHM'] = stratParams[winr][1].\
             get('hailMary', False)
-        resultsDF.loc[indx, 'player%d_stratWP'%pindx] = stratParams[pindx][1].\
+        resultsDF.loc[indx, 'winner_stratWP'] = stratParams[winr][1].\
             get('addWildPoints', False)
-        resultsDF.loc[indx, 'player%d_stratCP'%pindx] = stratParams[pindx][1].\
+        resultsDF.loc[indx, 'winner_stratCP'] = stratParams[winr][1].\
             get('countNotPoint', False)
-        resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
-            ['player played summary'][pindx][0]
-        resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
-            ['player played summary'][pindx][1]
-        resultsDF.loc[indx, 'player%d_wilds_played'%pindx] = allResults[indx]\
-            ['player played summary'][pindx][-1][0]
-        resultsDF.loc[indx, 'player%d_wildplus4s_played'%pindx] = allResults[indx]\
-            ['player played summary'][pindx][-1][1]
-        resultsDF.loc[indx, 'player%d_revs_played'%pindx] = allResults[indx]\
-            ['player played summary'][pindx][-2][0]
-        resultsDF.loc[indx, 'player%d_skps_played'%pindx] = allResults[indx]\
-            ['player played summary'][pindx][-2][1]
-        resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
-            ['player played summary'][pindx][-2][2]
-        resultsDF.loc[indx, 'player%d_remain_cards'%pindx] = allResults[indx]\
-            ['player remaining summary'][pindx][0]
-        resultsDF.loc[indx, 'player%d_remain_points'%pindx] = allResults[indx]\
-            ['player remaining summary'][pindx][1]
-        resultsDF.loc[indx, 'player%d_rank'%pindx] = allResults[indx]\
-            ['player ranking'][pindx]
-    # add winner data again as separate features
-    winr = allResults[indx]['winner']
-    resultsDF.loc[indx, 'winner_strat_params'] = stratParams[winr][2]
-    resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0]
-    resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
-        get('hurtFirst', False)
-    resultsDF.loc[indx, 'winner_stratHM'] = stratParams[winr][1].\
-        get('hailMary', False)
-    resultsDF.loc[indx, 'winner_stratWP'] = stratParams[winr][1].\
-        get('addWildPoints', False)
-    resultsDF.loc[indx, 'winner_stratCP'] = stratParams[winr][1].\
-        get('countNotPoint', False)
-    resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
-        ['player played summary'][winr][0]
-    resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
-        ['player played summary'][winr][1]
-    resultsDF.loc[indx, 'winner_wilds_played'] = allResults[indx]\
-        ['player played summary'][winr][-1][0]
-    resultsDF.loc[indx, 'winner_wildplus4s_played'] = allResults[indx]\
-        ['player played summary'][winr][-1][1]
-    resultsDF.loc[indx, 'winner_revs_played'] = allResults[indx]\
-        ['player played summary'][winr][-2][0]
-    resultsDF.loc[indx, 'winner_skps_played'] = allResults[indx]\
-        ['player played summary'][winr][-2][1]
-    resultsDF.loc[indx, 'winner_plus2s_played'] = allResults[indx]\
-        ['player played summary'][winr][-2][2]
+        resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
+            ['player played summary'][winr][0]
+        resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
+            ['player played summary'][winr][1]
+        resultsDF.loc[indx, 'winner_wilds_played'] = allResults[indx]\
+            ['player played summary'][winr][-1][0]
+        resultsDF.loc[indx, 'winner_wildplus4s_played'] = allResults[indx]\
+            ['player played summary'][winr][-1][1]
+        resultsDF.loc[indx, 'winner_revs_played'] = allResults[indx]\
+            ['player played summary'][winr][-2][0]
+        resultsDF.loc[indx, 'winner_skps_played'] = allResults[indx]\
+            ['player played summary'][winr][-2][1]
+        resultsDF.loc[indx, 'winner_plus2s_played'] = allResults[indx]\
+            ['player played summary'][winr][-2][2]
 
-    # serialize results
-    filName = loggFilName[:-4] + '.p'
-    pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
-                file=open(filName, 'wb'))
-    gLogg.info('\nGame results serialized to %s', filName)
-    eLogg.info('\nGame results serialized to %s', filName)
-    gameRunFiles[indx] = filName
+        # serialize results
+        filName = loggFilName[:-4] + '.p'
+        pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
+                    file=open(filName, 'wb'))
+        gLogg.info('\nGame results serialized to %s', filName)
+        eLogg.info('\nGame results serialized to %s', filName)
+        gameRunFiles[indx] = filName
 
-# compute some possibly-useful data
-# map strat+params to integers
-uniqStrats = np.unique(resultsDF[[c for c in resultsDF if 'strat_params' in c]].values)
-stratMap = {uniq:sindx for (sindx,uniq) in enumerate(uniqStrats)}
-resultsDF['winner_strat_params_int'] = resultsDF['winner_strat_params'].map(stratMap)
-# winner started the game flag
-resultsDF['winner_started'] = resultsDF['winner'] == resultsDF['start_player']
+    # compute some possibly-useful data
+    # map strat+params to integers
+    uniqStrats = np.unique(resultsDF[[c for c in resultsDF if 'strat_params' in c]].values)
+    stratMap = {uniq:sindx for (sindx,uniq) in enumerate(uniqStrats)}
+    resultsDF['winner_strat_params_int'] = resultsDF['winner_strat_params'].map(stratMap)
+    # winner started the game flag
+    resultsDF['winner_started'] = resultsDF['winner'] == resultsDF['start_player']
 
-# show some data
-display(resultsDF.head())
+    # talk about any unused strategies
+    eLogg.info(designUseCounts)
+    for strat in designUseCounts.keys():
+        if 0 in designUseCounts[strat]:
+            eLogg.info(strat.__name__ + ' has unused parameter set(s):')
+            for pIndx in range(len(designUseCounts[strat])):
+                if designUseCounts[strat][pIndx] == 0:
+                    eLogg.info(design[strat][pIndx])
 
-# talk about any unused strategies
-eLogg.info(designUseCounts)
-for strat in designUseCounts.keys():
-    if 0 in designUseCounts[strat]:
-        eLogg.info(strat.__name__ + ' has unused parameter set(s):')
-        for pIndx in range(len(designUseCounts[strat])):
-            if designUseCounts[strat][pIndx] == 0:
-                eLogg.info(design[strat][pIndx])
+    # winner summary
+    print('Winner counts by strategy and start')
+    winSummary = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
+        ['winner'].count().sort_values(ascending=False)
+    display(winSummary)
 
-# winner summary
-print('Winner counts by strategy and start')
-winSummary = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
-    ['winner'].count().sort_values(ascending=False)
-display(winSummary)
-
-# timing
-MCTimeStp = dt.datetime.now()
-MCPerfStp = time.perf_counter()
-eLogg.info('Experiment with %d games completed in %s(m)',
-           MCSims, (MCPerfStp - MCPerfStt)/60)
+    # timing
+    MCTimeStp = dt.datetime.now()
+    MCPerfStp = time.perf_counter()
+    eLogg.info('Experiment with %d games completed in %s(m)',
+            MCSims, (MCPerfStp - MCPerfStt)/60)
 
 
-# serialize everything
-experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'logLevel':logLevel,
-                     'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
-                     'player names':playerNames, 'design':design,
-                     'designUseCounts':designUseCounts, 'resultsDF':resultsDF,
-                     'winSummary':winSummary, 'gameRunFiles':gameRunFiles}
-filName = './output/'+loggExpName+'.p'
-pickle.dump(experimentResults, file=open(filName, 'wb'))
-eLogg.info('Experiment results logged & serialized to %s.*'%filName[:-2])
+    # serialize everything
+    experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'countPoints':countPoints,
+                         'startPlayer':startPlayer,'player names':playerNames,
+                         'logLevel':logLevel,
+                         'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
+                         'design':design, 'designUseCounts':designUseCounts,
+                         'resultsDF':resultsDF, 'winSummary':winSummary,
+                         'gameRunFiles':gameRunFiles}
+    filName = './output/'+loggExpName+'.p'
+    pickle.dump(experimentResults, file=open(filName, 'wb'))
+    eLogg.info('Experiment results logged & serialized to %s.*'%filName[:-2])
+    MCTimeStp = dt.datetime.now()
+    MCPerfStp = time.perf_counter()
+    eLogg.info('Experiment with %d games completed in %s(m)',
+            MCSims, (MCPerfStp - MCPerfStt)/60)
