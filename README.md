@@ -1,7 +1,9 @@
 # Uno Game Simulator
-This is a simulator for the card game Uno. This simulator is designed to run an experiment with two major playing strategies, each with several parameterized variants. Currently, players are randomly assigned a strategy and associated parameters in each simulated game. I may add the ability to define this as part of the simulator's parameters. *The goal of developing this simulator is to identify an optimal play strategy*. Simulated games follow the rules of Uno. There's no possibility of bluffing and playing a draw 4 wild, so no possibility of challenging a bluff.
+This is a simulator for the card game Uno. This simulator is designed to run an experiment with two major playing strategies, each with several parameterized variants. Players can either have their strategies defined by the experimenter, or assigned randomly. Simulated games follow the rules of Uno. There's no possibility of bluffing and playing a draw 4 wild, so no possibility of challenging a bluff.
 
 Each simulated game saves text output about what's going on to a timestamped logged file. A plethora of game information and results is also pickled to a .p file with the same timestamp. In addition, progress and summary text output is saved to a timestamped experiment file. Experiment results are also pickled to a .p file with the same timestamp.
+
+*The goal of developing this simulator is to identify an optimal play strategy*. 
 
 ## Python Requirements
 I have developed and tested this with python 3.10 on Ubuntu 22 LTS. See [package requirements file](./requirements.txt).
@@ -10,6 +12,7 @@ I have developed and tested this with python 3.10 on Ubuntu 22 LTS. See [package
 This simulator - wholly contained in [Uno.py](./Uno.py) is designed to be run from the command line with several arguments as `python3 ./Uno.py`, with arguments as listed below. Running `python3 ./Uno.py --help` will print some brief help information on the arguments. None of the arguments are validated at all. If they don't make sense, the results will be crap or the simulator will crash.
 
 ### Simulation Parameters
+- `--config`: Here the experimenter can pass a path + filename of a config file to read instead of requiring the below arguments. A sample [config file][./config.env] is included.
 - `--sims`: This is the number of simulated games in the experiment.
 - `--player`: Each player is just defined as a player's name, for however many `--player` arguments are passed. It allows for a variable number of players, expecting 2, but doesn't otherwise restrict the number. The game itself says it's good for up to 8 players. The name associated with each `--player` argument will be put into a list in order.
 - `--startPlayer`: This is the index into the list of players of who should start. If not passed, the starting player is randomly chosen in each game.
@@ -21,7 +24,11 @@ This simulator - wholly contained in [Uno.py](./Uno.py) is designed to be run fr
 
 Executing, for example `python3 ./Uno.py --sims 10 --player 'Ben Dover' --player 'Hugh Jass' --points False --seed 42 --debug True` will run an experiment of Ben and Hugh playing 10 games, not counting points. The PRNG starting seed will be set to 42, and extra debug logging will be output.
 
+A benefit of using a config file instead of command-line arguments is that the experimenter can define strategies & parameterizations for any of the players. Those player who don't have a defined strategy will have their randomly selected from all possibilities.
+
 ## Strategies
+The simulator has two major playing strategies, each with several parameterized variants. If any player does not have a strategy defined, it and it's parameters will be randomly selected from all possible combinations of strategies & parameterizations.
+
 *stratfinishCurrentColor*: Using this strategy, a player will try to play cards of the game's current color as long as possible (i.e., to finish the current color). If there are only 2 players, the strategy will first try to play a skip / reverse to get another turn. Otherwise, any other special card of the same color will be preferred, followed by a value card. If not possible, a wild card is next preferred, followed by the best (see `countPoints`) card from another color.
 ### Parameters
 - `hurtFirst`: Consider a situation in which a player has an option to play a draw 4 wild vs. regular wild, or a draw 2 special card vs. any other special card. If `hurtFirst` is `True`, the strategy will choose the option that forces the next player to draw cards.

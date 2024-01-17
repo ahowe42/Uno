@@ -1,17 +1,15 @@
 '''
-# TODO: add requirements file.
-# TODO: allow definition of player's strategies
 # TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
 with multiprocessing.Pool() as pool:
     for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
         results[indx] = expd
-# TODO: can I add an option to read parameters from a dotenv file?
 # TODO: someday refactor strategies and how playable cards are passed
 '''
 from itertools import product
 from collections import OrderedDict
 import pickle
 import argparse
+from dotenv import dotenv_values
 import logging
 import time
 import datetime as dt
@@ -21,8 +19,6 @@ import numpy as np
 import ipdb
 import re
 import pandas as pd
-
-pd.set_option('display.max_columns', None)
 
 
 
@@ -91,44 +87,111 @@ def parseArgs():
     :return MCSims: integer number of simulations in experiment
     :return playerNames: list of string player names 
     :return startPlayer: optional (None) starting player index
-    :return rndSeed: optional (None) seed for PRNG
     :return cardPoints: optional (True) flag to give cards points or not
     :return experDescrip: optional ('Test') experiment description
     :return gameDescrip: optional ('Test') game description
+    :return rndSeed: optional (None) seed for PRNG
     :return debug: optional (False) flag to add debugging output to logs
+    :return config optional (None) string config file read; playerStrats and
+        playerParams can only be set using the config file
+    :return playerStrats: optional ([None, ...]) list of player strategy callables
+    :return playerParams: optional ([None, ...]) list of player strategy parameter
+        dicts
     '''
 
     # setup to get the arguments from the cmdline
     parser = argparse.ArgumentParser(description='Uno Simulator')
-    # optional
-    parser.add_argument('--debug', type=bool, default=False,
-                        help='Print extra debugging messages to logs (default=False)')
-    parser.add_argument('--seed', type=int, default=None, help='PRNG seed (default=None)')
-    parser.add_argument('--points', type=bool, default=True,
-                        help='Flag to give cards point values (default=True)')
-    parser.add_argument('--gDescrip', type=str, default='Test',
-                        help='Description test for games (default=Test)')
-    parser.add_argument('--eDescrip', type=str, default='Test',
-                        help='Description test for experiment (default=Test)')
-    parser.add_argument('--startPlayer', type=int, default=None,
-                        help='Starting player index (default=None)')
-    # required
+    # config to use instead of the below
+    parser.add_argument('--config', type=str, default=None,
+                        help='Optional config file to read, ignoring all other arguments')
+    
+    # required (not really, but nearly)
     parser.add_argument('--sims', type=int, help='Number of simulations in experiment')
     parser.add_argument('--player', type=str, action='append',
-    help='Name of player, must be at least 2')
+                        help='Name of player, must be at least 2')
+    # optional
+    parser.add_argument('--startPlayer', type=int, default=None,
+                        help='Starting player index (default=None)')
+    parser.add_argument('--points', type=bool, default=True,
+                        help='Flag to give cards point values (default=True)')
+    parser.add_argument('--eDescrip', type=str, default='Test',
+                        help='Description test for experiment (default=Test)')
+    parser.add_argument('--gDescrip', type=str, default='Test',
+                        help='Description test for games (default=Test)')
+    parser.add_argument('--seed', type=int, default=None, help='PRNG seed (default=None)')
+    parser.add_argument('--debug', type=bool, default=True,
+                        help='Print extra debugging messages to logs (default=True)')
 
     # parse them
     args = parser.parse_args()
-    debug = args.debug
-    rndSeed = args.seed
-    cardPoints = args.points
-    gameDescrip = args.gDescrip
-    experDescrip = args.eDescrip
-    startPlayer = args.startPlayer
-    MCSims = args.sims
-    playerNames = args.player
+    if args.config is not None:
+        config = args.config
+        (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
+         rndSeed, debug, playerStrats, playerParams) = parseCnfg(config)
+    else:
+        MCSims = args.sims
+        playerNames = args.player
+        startPlayer = args.startPlayer
+        cardPoints = args.points
+        experDescrip = args.eDescrip
+        gameDescrip = args.gDescrip
+        rndSeed = args.seed
+        debug = args.debug
+        config = None
+        playerStrats = [None]*len(playerNames)
+        playerParams = [None]*len(playerNames)
 
-    return MCSims, playerNames, startPlayer, rndSeed, cardPoints, experDescrip, gameDescrip, debug
+    return (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
+            rndSeed, debug, config, playerStrats, playerParams)
+
+
+def parseCnfg(configFile:str):
+    '''
+    Function to parse the config file.
+    :param configFile: full path to file with simulation configuration
+    :return MCSims: integer number of simulations in experiment
+    :return playerNames: list of string player names 
+    :return startPlayer: optional (None) starting player index
+    :return cardPoints: optional (True) flag to give cards points or not
+    :return experDescrip: optional ('Test') experiment description
+    :return gameDescrip: optional ('Test') game description
+    :return rndSeed: optional (None) seed for PRNG
+    :return debug: optional (False) flag to add debugging output to logs
+    :return playerStrats: optional ([None, ...]) list of player strategy callables
+    :return playerParams: optional ([None, ...]) list of player strategy parameter
+        dicts
+    '''
+
+    # load simulation config
+    config = dotenv_values(configFile)
+
+    # parse values
+    MCSims = int(config['sims'])
+    startPlayer = config.get('startPlayer', None)
+    cardPoints = bool(config.get('points', True))
+    experDescrip = config.get('eDescrip', 'Test')
+    gameDescrip = config.get('gDescrip', 'Test')
+    rndSeed = config.get('seed', None)
+    if rndSeed is not None:
+        rndSeed = int(rndSeed)
+    debug = bool(config.get('debug', True))
+
+    # parse players data
+    playerNames = []
+    playerStrats = []
+    playerParams = []
+    for indx in range(8):
+        if config['NAME_%d'%indx] is not None:
+            playerNames.append(config['NAME_%d'%indx])
+            playerStrats.append(None)
+            playerParams.append(None)
+            # there is a player, so check for a strat
+            if config['STRAT_%d'%indx] is not None:
+                playerStrats[indx] = globals()[config['STRAT_%d'%indx]]
+                playerParams[indx] = eval(config['PARAMS_%d'%indx])
+    
+    return (MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+            gameDescrip, rndSeed, debug, playerStrats, playerParams)
 
 
 # Game object classes and functions
@@ -1544,7 +1607,8 @@ if __name__ == '__main__':
     #cardPoints = True
     #experDescrip = gameDescrip = 'Test'
     #debug = True
-    MCSims, playerNames, startPlayer, rndSeed, cardPoints, experDescrip, gameDescrip, debug = parseArgs()
+    (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
+     rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
     logLevel = [20, 10][int(debug)] # 10=DEBUG+, 20=INFO+
 
     # start experiment logging
@@ -1596,14 +1660,23 @@ if __name__ == '__main__':
         eLogg.info('Logging game to %s', loggFilName)
         gLogg = getCreateLogger(name=loggGameName, file=loggFilName, level=logLevel)
         
-        # setup players with randomly-selected strategies
+        # setup players with randomly-selected strategies, unless defined in a
+        # config file
         players = [None]*len(playerNames)
         stratParams = [None]*len(playerNames)
         for (pIndx, player) in enumerate(playerNames):
-            # get random strategy & params
-            strat = strats[int(np.random.rand()>0.5)]
-            paramRnd = np.random.randint(len(design[strat]))
-            params = design[strat][paramRnd]
+            if playerStrats[pIndx] is None:
+                gLogg.debug('Randomizing strategy for %s', playerNames[pIndx])
+                # get random strategy & params
+                strat = strats[int(np.random.rand()>0.5)]
+                paramRnd = np.random.randint(len(design[strat]))
+                params = design[strat][paramRnd]
+            else:
+                gLogg.debug('Using strategy from config for %s', playerNames[pIndx])
+                strat = playerStrats[pIndx]
+                params = playerParams[pIndx]
+                paramRnd = design[strat].index(params)
+
             # build strat+params string
             stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
             # save the selected strat+params for recording after the game
@@ -1730,8 +1803,9 @@ if __name__ == '__main__':
 
     # serialize everything
     experimentResults = {'rndSeed':rndSeed, 'MCSims':MCSims, 'cardPoints':cardPoints,
-                         'startPlayer':startPlayer,'player names':playerNames,
-                         'logLevel':logLevel,
+                         'startPlayer':startPlayer,'playerNames':playerNames,
+                         'logLevel':logLevel, 'config':config,
+                         'playerStrats':playerStrats, 'playerParams':playerParams,
                          'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
                          'design':design, 'designUseCounts':designUseCounts,
                          'resultsDF':resultsDF, 'winSummary':winSummary,
