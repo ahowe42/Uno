@@ -13,7 +13,7 @@ from dotenv import dotenv_values
 import logging
 import time
 import datetime as dt
-#import multiprocessing
+import multiprocessing
 from IPython.display import display
 import numpy as np
 import ipdb
@@ -1597,25 +1597,166 @@ def designExperiment():
     return design
 
 
+
+def parallelGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
+                 playerNames:list, playerStrats:list, playerParams:list,
+                 design:dict, designUseCounts:dict, startPlayer, cardPoints,
+                 rndSeed, allResults:list, resultsDF:pd.DataFrame, gameRunFiles:list):
+    '''
+    blah
+    '''
+
+    # talk
+    eLogg.info('Game %d of %d', indx+1, MCSims)
+
+    # setup a game with this config
+    sttTS = dt.datetime.now()
+    loggGameName = 'Uno_Game_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
+        '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')
+    
+    # start logger
+    loggFilName = './output/%s.log'%loggGameName
+    eLogg.info('Logging game to %s', loggFilName)
+    gLogg = getCreateLogger(name=loggGameName, file=loggFilName, level=logLevel)
+    
+    # setup players with randomly-selected strategies, unless defined in a
+    # config file
+    players = [None]*len(playerNames)
+    stratParams = [None]*len(playerNames)
+    for (pIndx, player) in enumerate(playerNames):
+        if playerStrats[pIndx] is None:
+            gLogg.debug('Randomizing strategy for %s', playerNames[pIndx])
+            # get random strategy & params
+            strat = strats[int(np.random.rand()>0.5)]
+            paramRnd = np.random.randint(len(design[strat]))
+            params = design[strat][paramRnd]
+        else:
+            gLogg.debug('Using strategy from config for %s', playerNames[pIndx])
+            strat = playerStrats[pIndx]
+            params = playerParams[pIndx]
+            paramRnd = design[strat].index(params)
+
+        # build strat+params string
+        stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
+        # save the selected strat+params for recording after the game
+        stratParams[pIndx] = [strat.__name__, params, stratStr]
+        # update strategy usage count
+        designUseCounts[strat][paramRnd] += 1
+        # create the player
+        players[pIndx] = Player(player, strat, params)
+        # talk
+        gLogg.info('Player %s created using strategy %s', player, stratStr)
+
+    # run the game
+    thisGame = Game(loggGameName, players, startPlayer, cardPoints, rndSeed)
+    allResults[indx] = thisGame.play()
+
+    # update the results dataframe
+    resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
+    resultsDF.loc[indx, 'num_players'] = len(players)
+    resultsDF.loc[indx, 'start_player'] = allResults[indx]['start']
+    resultsDF.loc[indx, 'cardPoints'] = cardPoints
+    resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
+    resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
+        allResults[indx]['timing'][1]
+    resultsDF.loc[indx, 'cards_played'] = allResults[indx]['discard summary'][0]
+    resultsDF.loc[indx, 'points_played'] = allResults[indx]['discard summary'][1]
+    resultsDF.loc[indx, 'wilds_played'] = allResults[indx]['discard summary'][-1][0]
+    resultsDF.loc[indx, 'wildplus4s_played'] = allResults[indx]['discard summary'][-1][1]
+    resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
+    resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
+    resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
+    # add player-specific data
+    for (pindx, _) in enumerate(players):
+        resultsDF.loc[indx, 'player%d_strat_params'%pindx] = stratParams[pindx][2]
+        resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0]
+        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
+            get('hurtFirst', False)
+        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = stratParams[pindx][1].\
+            get('hailMary', False)
+        resultsDF.loc[indx, 'player%d_stratWP'%pindx] = stratParams[pindx][1].\
+            get('addWildPoints', False)
+        resultsDF.loc[indx, 'player%d_stratCP'%pindx] = stratParams[pindx][1].\
+            get('countNotPoint', False)
+        resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][0]
+        resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][1]
+        resultsDF.loc[indx, 'player%d_wilds_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-1][0]
+        resultsDF.loc[indx, 'player%d_wildplus4s_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-1][1]
+        resultsDF.loc[indx, 'player%d_revs_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-2][0]
+        resultsDF.loc[indx, 'player%d_skps_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-2][1]
+        resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
+            ['player played summary'][pindx][-2][2]
+        resultsDF.loc[indx, 'player%d_remain_cards'%pindx] = allResults[indx]\
+            ['player remaining summary'][pindx][0]
+        resultsDF.loc[indx, 'player%d_remain_points'%pindx] = allResults[indx]\
+            ['player remaining summary'][pindx][1]
+        resultsDF.loc[indx, 'player%d_rank'%pindx] = allResults[indx]\
+            ['player ranking'][pindx]
+    # add winner data again as separate features
+    winr = allResults[indx]['winner']
+    resultsDF.loc[indx, 'winner_strat_params'] = stratParams[winr][2]
+    resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0]
+    resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
+        get('hurtFirst', False)
+    resultsDF.loc[indx, 'winner_stratHM'] = stratParams[winr][1].\
+        get('hailMary', False)
+    resultsDF.loc[indx, 'winner_stratWP'] = stratParams[winr][1].\
+        get('addWildPoints', False)
+    resultsDF.loc[indx, 'winner_stratCP'] = stratParams[winr][1].\
+        get('countNotPoint', False)
+    resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
+        ['player played summary'][winr][0]
+    resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
+        ['player played summary'][winr][1]
+    resultsDF.loc[indx, 'winner_wilds_played'] = allResults[indx]\
+        ['player played summary'][winr][-1][0]
+    resultsDF.loc[indx, 'winner_wildplus4s_played'] = allResults[indx]\
+        ['player played summary'][winr][-1][1]
+    resultsDF.loc[indx, 'winner_revs_played'] = allResults[indx]\
+        ['player played summary'][winr][-2][0]
+    resultsDF.loc[indx, 'winner_skps_played'] = allResults[indx]\
+        ['player played summary'][winr][-2][1]
+    resultsDF.loc[indx, 'winner_plus2s_played'] = allResults[indx]\
+        ['player played summary'][winr][-2][2]
+
+    # serialize results
+    filName = loggFilName[:-4] + '.p'
+    pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
+                file=open(filName, 'wb'))
+    gLogg.info('\nGame results serialized to %s', filName)
+    eLogg.info('\nGame results serialized to %s', filName)
+    gameRunFiles[indx] = filName
+
+    return None
+
+
 ''' EXECUTE '''
 if __name__ == '__main__':
     # get the parameters
-    #MCSims = 500
-    #playerNames =['A', 'B', 'C', 'D']
-    #startPlayer = None
-    #rndSeed = None
-    #cardPoints = True
-    #experDescrip = gameDescrip = 'Test'
-    #debug = True
-    (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-     rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
+    MCSims = 10
+    playerNames =['A', 'B', 'C', 'D']
+    startPlayer = None
+    rndSeed = None
+    cardPoints = True
+    experDescrip = gameDescrip = 'Test'
+    debug = True
+    playerStrats = [None]*len(playerNames)
+    playerParams = [None]*len(playerNames)
+    #(MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
+    # rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
     logLevel = [20, 10][int(debug)] # 10=DEBUG+, 20=INFO+
 
     # start experiment logging
     experSttTS = dt.datetime.now()
     loggExpName = 'Uno_Experiment_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_',
                                            string=experDescrip)+'_'+\
-                                            experSttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+                                            experSttTS.strftime('%Y%m%d_%H%M%S_%f')
     print('Logging experiment to ./output/%s', loggExpName)
     eLogg = getCreateLogger(name=loggExpName, file='./output/'+loggExpName+'.log',
                             level=logLevel)
@@ -1641,138 +1782,20 @@ if __name__ == '__main__':
     else:
         eLogg.info('Starting player = randomized')
 
-    # run games serially
+    # run games in parallel
     allResults = [None]*MCSims
     resultsDF = pd.DataFrame(index=range(MCSims))
     gameRunFiles = [None]*MCSims
-    # TODO: can everything here be run in parallel?
-    for indx in range(MCSims):
-        # talk
-        eLogg.info('Game %d of %d', indx+1, MCSims)
 
-        # setup a game with this config
-        sttTS = dt.datetime.now()
-        loggGameName = 'Uno_Game_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
-            '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
-        
-        # start logger
-        loggFilName = './output/%s.log'%loggGameName
-        eLogg.info('Logging game to %s', loggFilName)
-        gLogg = getCreateLogger(name=loggGameName, file=loggFilName, level=logLevel)
-        
-        # setup players with randomly-selected strategies, unless defined in a
-        # config file
-        players = [None]*len(playerNames)
-        stratParams = [None]*len(playerNames)
-        for (pIndx, player) in enumerate(playerNames):
-            if playerStrats[pIndx] is None:
-                gLogg.debug('Randomizing strategy for %s', playerNames[pIndx])
-                # get random strategy & params
-                strat = strats[int(np.random.rand()>0.5)]
-                paramRnd = np.random.randint(len(design[strat]))
-                params = design[strat][paramRnd]
-            else:
-                gLogg.debug('Using strategy from config for %s', playerNames[pIndx])
-                strat = playerStrats[pIndx]
-                params = playerParams[pIndx]
-                paramRnd = design[strat].index(params)
-
-            # build strat+params string
-            stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
-            # save the selected strat+params for recording after the game
-            stratParams[pIndx] = [strat.__name__, params, stratStr]
-            # update strategy usage count
-            designUseCounts[strat][paramRnd] += 1
-            # create the player
-            players[pIndx] = Player(player, strat, params)
-            # talk
-            gLogg.info('Player %s created using strategy %s', player, stratStr)
-
-        # run the game
-        thisGame = Game(loggGameName, players, startPlayer, cardPoints, rndSeed)
-        allResults[indx] = thisGame.play()
-
-        # update the results dataframe
-        resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
-        resultsDF.loc[indx, 'num_players'] = len(players)
-        resultsDF.loc[indx, 'start_player'] = allResults[indx]['start']
-        resultsDF.loc[indx, 'cardPoints'] = cardPoints
-        resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
-        resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
-            allResults[indx]['timing'][1]
-        resultsDF.loc[indx, 'cards_played'] = allResults[indx]['discard summary'][0]
-        resultsDF.loc[indx, 'points_played'] = allResults[indx]['discard summary'][1]
-        resultsDF.loc[indx, 'wilds_played'] = allResults[indx]['discard summary'][-1][0]
-        resultsDF.loc[indx, 'wildplus4s_played'] = allResults[indx]['discard summary'][-1][1]
-        resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
-        resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
-        resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
-        # add player-specific data
-        for (pindx, _) in enumerate(players):
-            resultsDF.loc[indx, 'player%d_strat_params'%pindx] = stratParams[pindx][2]
-            resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0]
-            resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
-                get('hurtFirst', False)
-            resultsDF.loc[indx, 'player%d_stratHM'%pindx] = stratParams[pindx][1].\
-                get('hailMary', False)
-            resultsDF.loc[indx, 'player%d_stratWP'%pindx] = stratParams[pindx][1].\
-                get('addWildPoints', False)
-            resultsDF.loc[indx, 'player%d_stratCP'%pindx] = stratParams[pindx][1].\
-                get('countNotPoint', False)
-            resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][0]
-            resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][1]
-            resultsDF.loc[indx, 'player%d_wilds_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-1][0]
-            resultsDF.loc[indx, 'player%d_wildplus4s_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-1][1]
-            resultsDF.loc[indx, 'player%d_revs_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-2][0]
-            resultsDF.loc[indx, 'player%d_skps_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-2][1]
-            resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-2][2]
-            resultsDF.loc[indx, 'player%d_remain_cards'%pindx] = allResults[indx]\
-                ['player remaining summary'][pindx][0]
-            resultsDF.loc[indx, 'player%d_remain_points'%pindx] = allResults[indx]\
-                ['player remaining summary'][pindx][1]
-            resultsDF.loc[indx, 'player%d_rank'%pindx] = allResults[indx]\
-                ['player ranking'][pindx]
-        # add winner data again as separate features
-        winr = allResults[indx]['winner']
-        resultsDF.loc[indx, 'winner_strat_params'] = stratParams[winr][2]
-        resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0]
-        resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
-            get('hurtFirst', False)
-        resultsDF.loc[indx, 'winner_stratHM'] = stratParams[winr][1].\
-            get('hailMary', False)
-        resultsDF.loc[indx, 'winner_stratWP'] = stratParams[winr][1].\
-            get('addWildPoints', False)
-        resultsDF.loc[indx, 'winner_stratCP'] = stratParams[winr][1].\
-            get('countNotPoint', False)
-        resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
-            ['player played summary'][winr][0]
-        resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
-            ['player played summary'][winr][1]
-        resultsDF.loc[indx, 'winner_wilds_played'] = allResults[indx]\
-            ['player played summary'][winr][-1][0]
-        resultsDF.loc[indx, 'winner_wildplus4s_played'] = allResults[indx]\
-            ['player played summary'][winr][-1][1]
-        resultsDF.loc[indx, 'winner_revs_played'] = allResults[indx]\
-            ['player played summary'][winr][-2][0]
-        resultsDF.loc[indx, 'winner_skps_played'] = allResults[indx]\
-            ['player played summary'][winr][-2][1]
-        resultsDF.loc[indx, 'winner_plus2s_played'] = allResults[indx]\
-            ['player played summary'][winr][-2][2]
-
-        # serialize results
-        filName = loggFilName[:-4] + '.p'
-        pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
-                    file=open(filName, 'wb'))
-        gLogg.info('\nGame results serialized to %s', filName)
-        eLogg.info('\nGame results serialized to %s', filName)
-        gameRunFiles[indx] = filName
+    def paraGame(i):
+        return parallelGame(i, eLogg, MCSims, gameDescrip, logLevel, playerNames,
+                            playerStrats, playerParams, design, designUseCounts,
+                            startPlayer, cardPoints, rndSeed, allResults, resultsDF,
+                            gameRunFiles)
+    
+    with multiprocessing.Pool() as pool:
+        for (indx, _) in pool.imap(paraGame, range(MCSims)):
+            eLogg.debug('Parallel run %d', indx)
 
     # compute some possibly-useful data
     # map strat+params to integers
