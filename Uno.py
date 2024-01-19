@@ -340,7 +340,7 @@ class Card():
 
 
 class Deck():
-    def __init__(self, cards:list[Card]=None, shuffle:bool=True,
+    def __init__(self, gLogg, cards:list[Card]=None, shuffle:bool=True,
                  cardPoints:bool=True):
         '''
         Build the deck of Uno cards. For each color in a standard deck, there
@@ -348,11 +348,14 @@ class Deck():
         This is a total of 108 cards. The deck is defined as a list of cards.
         :param cards: optional (default=None) list of cards for this deck; if
             None, the deck is built
+        :param gLogg: logger
         :param shuffle: optional (default=True) flag indicating whether or not
             to shuffle the cards generated
         :param cardPoints: optional (default=True) flag to give cards points
             if False, every card is only worth 1 point
         '''
+
+        self.gLogg = gLogg
 
         if cards is None:
             # define possible indices
@@ -405,14 +408,14 @@ class Deck():
             # ensure there are enough cards in the deck
             if (thisGame.discardPile is not None) & (self.size <= cards):
                 # not enough cards, so reset the deck
-                gLogg.info('Only %d card(s), so rebuilding the deck from discard pile',
-                    self.size)
+                self.gLogg.info('Only %d card(s), so rebuilding the deck from discard pile',
+                                self.size)
                 thisGame.rebuildDeck()
                 rebuild = True
             elif self.size <= cards:
                 # this should never happen
-                gLogg.debug('Only %d cards, but discard is empty',
-                    self.size)
+                self.gLogg.debug('Only %d cards, but discard is empty',
+                                 self.size)
                 raise ValueError('Not enough cards to deal')
 
         # if deck was rebuilt, need to refer, this time, to thisGame
@@ -433,13 +436,16 @@ class Deck():
 
 
 class Hand():
-    def __init__(self, cards:list[Card]):
+    def __init__(self, gLogg, cards:list[Card]):
         '''
         Build a hand of cards. The hand is an enumeration-based dict of cards.
+        :param gLogg: logger
         :param cards: list of cards initially dealt to this hand; each card
             should be represented by a tuple of (index into the deck, the
             actual card).
         '''
+
+        self.gLogg = gLogg
 
         # initialize the hand
         self.currCards = OrderedDict()
@@ -543,9 +549,9 @@ class Hand():
         '''
 
         # talk
-        gLogg.info('\nPlaying %s', self.currCards[card][1])
+        self.gLogg.info('\nPlaying %s', self.currCards[card][1])
         if colorIndex is not None:
-            gLogg.info('\nNew color = %s', COLORS[colorIndex])
+            self.gLogg.info('\nNew color = %s', COLORS[colorIndex])
         # move to played cards
         this = self.currCards.pop(card)
         self.playedCards[card] = this
@@ -602,6 +608,7 @@ class Hand():
             # show the stackables
             prt += '\nStackable Matrix\n%s'%\
                 np.array([str(s[0])[0] for s in
+                          # TODO: will the below throw an exception in parallel?
                           thisGame.players[0].hand.canStack.flatten()]).\
                 reshape(self.cardCount, self.cardCount)
 
@@ -647,14 +654,18 @@ class Hand():
 
 
 class Player():
-    def __init__(self, name:str, strategy, strategyParams:dict, hand:Hand=None):
+    def __init__(self, gLogg, name:str, strategy, strategyParams:dict,
+                 hand:Hand=None):
         '''
         Define an Uno player.
+        :param gLogg: logger
         :param name: string name of player
         :param strategy: callable implementing player's strategy
         :param strategyParams: dict of kwarg parameters for strategy callable
         :param hand: optional (default=None) Hand object for player
         '''
+
+        self.gLogg = gLogg
         self.name = name
         self.strategy = strategy
         self.strategyParams = strategyParams
@@ -683,8 +694,8 @@ class Player():
             if thisGame.currColor is None:
                 # choose color as most frequent in hand
                 bestColor = self.hand.colorOrders[0]
-                gLogg.debug('\nWild on discard with no color, so choosing %s, %r',
-                    COLORS[bestColor], self.hand.colorOrders[0])
+                self.gLogg.debug('\nWild on discard with no color, so choosing %s, %r',
+                                 COLORS[bestColor], self.hand.colorOrders[0])
                 thisGame.currColor = bestColor
 
         # determine playable cards, and maybe draw one
@@ -703,23 +714,23 @@ class Player():
             # wild +4s only playable if none of the current color in the hand
             if len(self.hand.colors[thisGame.currColor]) == 0:
                 playableCards.extend(self.hand.wilds[1])
-                gLogg.debug('\nNo %s color cards, so wild +4 is playable',
-                    COLORS[thisGame.currColor])
+                self.gLogg.debug('\nNo %s color cards, so wild +4 is playable',
+                                 COLORS[thisGame.currColor])
             # get uniques
             playableCards = set(playableCards)
 
             # do we need to draw a card?
             if (len(playableCards) == 0) & (whilePass == 0):
-                gLogg.info('\nNo cards to play, drawing 1')
+                self.gLogg.info('\nNo cards to play, drawing 1')
                 card = thisGame.deck.deal(1, thisGame)[0]
                 self.hand.addCard(card)
-                gLogg.info('\nDealt %s', card[1])
+                self.gLogg.info('\nDealt %s', card[1])
             else:
                 break
             whilePass += 1
 
         # show hand
-        gLogg.debug('\n%s', self.hand.showHand(summary=False))
+        self.gLogg.debug('\n%s', self.hand.showHand(summary=False))
 
         # can we play?
         if len(playableCards) > 0:
@@ -759,26 +770,27 @@ class Player():
                 if playables[handIndx][1] in [4, 6]:
                     diffColorPlay.append((handIndx, card))
                 # talk
-                gLogg.debug('\nPlayable %d = (%d, %s): reason = %d', handIndx,
-                    *self.hand.currCards[handIndx], playables[handIndx][1])
+                self.gLogg.debug('\nPlayable %d = (%d, %s): reason = %d', handIndx,
+                                 *self.hand.currCards[handIndx], playables[handIndx][1])
             # summarize the summary
             sameColor = len(sameColorPlay)
             sameColorSpecial = len(sameColorSpecialPlay)
             diffColor = len(diffColorPlay)
             wilds = len(wildPlay)
             # talk
-            gLogg.debug('\nPlayable: %d same colors, %d same color specials, %d wilds, %d different colors',
-                sameColor, sameColorSpecial, wilds, diffColor)
-            gLogg.debug('\nPlayable same colors: %s\nPlayable same color specials, %s',
-                       sameColorPlay, sameColorSpecialPlay)
-            gLogg.debug('\nPlayable wilds: %s\nPlayable different colors: %s',
-                       wildPlay, diffColorPlay)
+            self.gLogg.debug('\nPlayable: %d same colors, %d same color specials, %d wilds, %d different colors',
+                             sameColor, sameColorSpecial, wilds, diffColor)
+            self.gLogg.debug('\nPlayable same colors: %s\nPlayable same color specials, %s',
+                             sameColorPlay, sameColorSpecialPlay)
+            self.gLogg.debug('\nPlayable wilds: %s\nPlayable different colors: %s',
+                             wildPlay, diffColorPlay)
 
             ''' now determine the best card to play '''
             # execute the strategy
-            bestCard, bestColor = self.strategy(self, thisGame, sameColorPlay,
-                                                sameColorSpecialPlay, wildPlay,
-                                                diffColorPlay, **self.strategyParams)
+            bestCard, bestColor = self.strategy(self.gLogg, self, thisGame,
+                                                sameColorPlay, sameColorSpecialPlay,
+                                                wildPlay, diffColorPlay,
+                                                **self.strategyParams)
 
             # just pick the highest value playable card - should not happen
             if bestCard is None:
@@ -786,35 +798,37 @@ class Player():
                           in playables.keys()]
                 playMe.sort(key=lambda x: x[1][1].points)
                 bestCard = playMe[-1][0]
-                gLogg.debug('\nPlay highest value playable card: %s',
-                           self.hand.currCards[bestCard][1])
+                self.gLogg.debug('\nPlay highest value playable card: %s',
+                                 self.hand.currCards[bestCard][1])
 
             # play the best card
             if bestCard is not None:
-                gLogg.info('\nBest card = %s', self.hand.currCards[bestCard][1])
+                self.gLogg.info('\nBest card = %s', self.hand.currCards[bestCard][1])
                 thisGame.addToDiscard(self.hand.currCards[bestCard], bestColor)
                 _ = self.hand.playCard(bestCard, bestColor)
         else:
-            gLogg.info('\nNo cards to play - skipping turn')        
+            self.gLogg.info('\nNo cards to play - skipping turn')        
 
         # yell Uno!
         if self.hand.cardCount == 1:
-            gLogg.info('\nUno!')
+            self.gLogg.info('\nUno!')
         elif self.hand.cardCount == 0:
-            gLogg.info('\nI won!')
+            self.gLogg.info('\nI won!')
 
         # update the card count for this player
         thisGame.playerCardsCounts[thisGame.currPlayer] = self.hand.cardCount
-        gLogg.debug('\nPlayer %s now has %d cards, %d points',
-            thisGame.players[thisGame.currPlayer].name, self.hand.cardCount, self.hand.points)
+        self.gLogg.debug('\nPlayer %s now has %d cards, %d points',
+                         thisGame.players[thisGame.currPlayer].name,
+                         self.hand.cardCount, self.hand.points)
 
 
 class Game():
-    def __init__(self, descrip:str, players:list, start:int=0, cardPoints:bool=True,
-                 rndSeed:int=None):
+    def __init__(self, gLogg, descrip:str, players:list, start:int=0,
+                 cardPoints:bool=True, rndSeed:int=None):
         '''
         Initialize a game of Uno.
-        :parm descrip: string description of game
+        :param gLogg: logger
+        :param descrip: string description of game
         :param players: list of player objects
         :param start: optional (default=None) index of starting player; if not
             provided, starter is randomly selected
@@ -823,6 +837,7 @@ class Game():
         :param rndSeed: optional (default=None) seed for numpy prng
         '''
 
+        self.gLogg = gLogg
         # set the random state
         if rndSeed is None:
             rndSeed = dt.datetime.now()
@@ -830,7 +845,7 @@ class Game():
                 rndSeed.microsecond
         self.rndSeed = rndSeed
         np.random.seed(rndSeed)
-        gLogg.debug('Random seed = %d', rndSeed)
+        self.gLogg.debug('Random seed = %d', rndSeed)
 
         # get inputs & set players data
         self.name = descrip
@@ -842,13 +857,13 @@ class Game():
         # get the Deck & put the top card on the pile
         self.rebuilt = 0
         self.rebuiltCards = []
-        self.deck = Deck(cardPoints=self.cardPoints)
+        self.deck = Deck(gLogg, cardPoints=self.cardPoints)
         self.discardPile = []
         self.addToDiscard(self.deck.deal(1)[0])
 
         # deal 7 cards to each player
         for player in self.players:
-            player.addHand(Hand(self.deck.deal(7)))
+            player.addHand(Hand(self.gLogg, self.deck.deal(7)))
         # remember each player's number of Cards
         self.playerCardsCounts = [7]*self.playersCount
 
@@ -868,11 +883,11 @@ class Game():
         self.nextPlayer = self.__nextPlayer__()
 
         # talk
-        gLogg.info('\n%s initialized with players', self.name)
+        self.gLogg.info('\n%s initialized with players', self.name)
         for player in self.players:
-            gLogg.info(player)
-        gLogg.info('\nInitial discard card = (%d = %s)', *self.discardPile[0])
-        gLogg.info('\n%s goes first', self.players[self.currPlayer].name)
+            self.gLogg.info(player)
+        self.gLogg.info('\nInitial discard card = (%d = %s)', *self.discardPile[0])
+        self.gLogg.info('\n%s goes first', self.players[self.currPlayer].name)
 
     def __nextPlayer__(self):
         '''
@@ -896,7 +911,7 @@ class Game():
 
         # set the next player
         nxt = (curr + self.playersOrder) % self.playersCount
-        gLogg.debug('\nNext player = %s', self.players[nxt].name)
+        self.gLogg.debug('\nNext player = %s', self.players[nxt].name)
         return nxt
 
     def addToDiscard(self, card:Card, colorIndex:int=None):
@@ -908,7 +923,7 @@ class Game():
         '''
         # add
         self.discardPile.append(card)
-        gLogg.debug('\n%s added to discard', card[1])
+        self.gLogg.debug('\n%s added to discard', card[1])
 
         # define the deck index of the current card
         self.currCardIndex = card[0]
@@ -919,9 +934,9 @@ class Game():
         else:
             self.currColor = colorIndex
         if self.currColor is not None:
-            gLogg.debug('\nCurrent color = %s', COLORS[self.currColor])
+            self.gLogg.debug('\nCurrent color = %s', COLORS[self.currColor])
         else:
-            gLogg.debug('\nNo current color')
+            self.gLogg.debug('\nNo current color')
         # define current special & value
         self.currSpecial = card[1].specialIndex
         self.currValue = card[1].valueIndex
@@ -933,22 +948,22 @@ class Game():
         '''
 
         # talk
-        gLogg.info('\n%s playing', self.players[self.currPlayer].name)
+        self.gLogg.info('\n%s playing', self.players[self.currPlayer].name)
         # make player draw cards if necessary
         if self.currSpecial is not None:
             if self.currSpecial == 2:
                 # +2 so draw 2
-                gLogg.info('\n +2 on discard pile, so drawing 2')
+                self.gLogg.info('\n +2 on discard pile, so drawing 2')
                 for (indx, card) in enumerate(self.deck.deal(2, self)):
-                    gLogg.info('\nDealt %s', card[1])
+                    self.gLogg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==1))
         elif self.currWild is not None:
             if self.currWild == 1:
                 # wild+4, so draw 4
-                gLogg.info('\nWild +4 on discard pile, so drawing 4')
+                self.gLogg.info('\nWild +4 on discard pile, so drawing 4')
                 for (indx, card) in enumerate(self.deck.deal(4, self)):
-                    gLogg.info('\nDealt %s', card[1])
+                    self.gLogg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==3))
         # take the turn
@@ -962,7 +977,7 @@ class Game():
         status = '; '.join(['%s has %d cards worth %d points'%\
                             (player.name, player.hand.cardCount, player.hand.points)
                             for player in self.players])
-        gLogg.info('\n'+status)
+        self.gLogg.info('\n'+status)
 
     def play(self):
         '''
@@ -975,7 +990,8 @@ class Game():
         # timing
         self.gameTimeStt = dt.datetime.now()
         self.gamePerfStt = time.perf_counter()
-        gLogg.debug('\n%s started on %s', self.name, self.gameTimeStt.isoformat()[:16])
+        self.gLogg.debug('\n%s started on %s', self.name,
+                         self.gameTimeStt.isoformat()[:16])
 
         # iterate over players, each taking their turn
         while min(self.playerCardsCounts) > 0:
@@ -983,17 +999,17 @@ class Game():
 
         # post-game summary
         self.postGameSummary()
-        gLogg.info('\n%s won!', self.players[self.winner].name)
+        self.gLogg.info('\n%s won!', self.players[self.winner].name)
 
         # timing
         self.gameTimeStp = dt.datetime.now()
         self.gamePerfStp = time.perf_counter()
 
         # talk
-        gLogg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
-                  self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
-                  self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
-                  self.discardSummary[0])
+        self.gLogg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
+                        self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
+                        self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
+                        self.discardSummary[0])
 
         return {'timing':(self.gameTimeStt, self.gamePerfStt, self.gameTimeStp,
                           self.gamePerfStp), 'winner':self.winner,
@@ -1014,48 +1030,50 @@ class Game():
         self.rebuilt += 1
 
         # get discards sans top card for new deck & shuffle
-        gLogg.debug('\nAdding & shuffling discard pile sans top (%d)',
-                   len(self.discardPile[:-1]))
+        self.gLogg.debug('\nAdding & shuffling discard pile sans top (%d)',
+                         len(self.discardPile[:-1]))
         cards = self.discardPile[:-1]
         np.random.shuffle(cards)
         # add the remainder of the deck: 42 is just a placeholder, as it'll be stripped
-        gLogg.debug('\nAdding remainder of deck (%d)', self.deck.size)
+        self.gLogg.debug('\nAdding remainder of deck (%d)', self.deck.size)
         cards.extend([(42, card) for card in self.deck.cards[-self.deck.size:]])
         # take all cards from each player *in reverse order* and add
         for player in self.players[::-1]:
-            gLogg.debug('\nAdding %s cards (%d)', player.name,
-                       len(player.hand.currCards))
+            self.gLogg.debug('\nAdding %s cards (%d)', player.name,
+                             len(player.hand.currCards))
             cards.extend(player.hand.currCards.values())
             player.hand.currCards = {}
         # add the top card
-        gLogg.debug('\nAdding the top discard (1)')
+        self.gLogg.debug('\nAdding the top discard (1)')
         cards += [self.discardPile[-1]]
         # remember the current color if top card is a wild
         if self.discardPile[-1][1].wildIndex is not None:
-            currColor = thisGame.currColor
+            currColor = self.currColor
         else:
             currColor = None
 
         # create new deck object
-        self.deck = Deck(cards=[card[1] for card in cards[::-1]], shuffle=False)
+        self.deck = Deck(self.gLogg, cards=[card[1] for card in cards[::-1]],
+                         shuffle=False)
 
         # add top card back to discard and ensure the current color is there
         # if top card is a wild
         self.discardPile = []
-        gLogg.debug('\nPutting back top discard')
+        self.gLogg.debug('\nPutting back top discard')
         self.addToDiscard(self.deck.deal(1)[0], currColor)
 
         # deal back all cards
         for (pindx, player) in enumerate(self.players):
             # get the cards dealt & add them
             cards = self.deck.deal(self.playerCardsCounts[pindx])
-            gLogg.debug('\nAdding back %d cards to %s', len(cards), player.name)
+            self.gLogg.debug('\nAdding back %d cards to %s', len(cards),
+                             player.name)
             for (cindx, card) in enumerate(cards):
                 summary = (cindx == self.playerCardsCounts[pindx]-1)
                 player.hand.addCard(card, updateSummary=summary)
         
         # talk
-        gLogg.info('\nDeck rebuilt')
+        self.gLogg.info('\nDeck rebuilt')
 
     def cardsSummary(self, cards):
         '''
@@ -1178,7 +1196,7 @@ def parseCardsList(cardsInHandList:list, draw2:int=False, revSkp:int=False,
 
 
 # Game strategy functions
-def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
+def stratFinishCurrentColor(gLogg, thisPlayer:Player, thisGame:Game, sameColorPlay,
                             sameColorSpecialPlay, wildPlay, diffColorPlay,
                             hurtFirst:bool=False, hailMary:bool=False,
                             countNotPoint:bool=False):
@@ -1189,6 +1207,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     to play a wild. If none of these, it will try to play a different color card.
     In the last 2 cases, the color is chosen according to whatever color has the
     most total points in the hand.
+    :param gLogg: logger
     :param thisPlayer: current player
     :param thisGame: current game
     :param sameColorPlay: list of (hand index, card) playable same color value
@@ -1379,7 +1398,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     return bestCard, bestColor
 
 
-def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
+def stratSwitchMaxColor(gLogg, thisPlayer:Player, thisGame:Game, sameColorPlay,
                         sameColorSpecialPlay, wildPlay, diffColorPlay,
                         hurtFirst:bool=False, hailMary:bool=False,
                         addWildPoints:bool=False, countNotPoint:bool=False):
@@ -1390,6 +1409,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     is the current color, it calls stratFinishCurrentColor. Once the best playable
     color is selected, it will choose a card to play using the priority order of
     wilds, special cards, then value cards (using the highest value of course).
+    :param gLogg: logger
     :param thisPlayer: current player
     :param thisGame: current game
     :param sameColorPlay: list of (hand index, card) playable same color value
@@ -1461,7 +1481,8 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         except NameError:
             # this wasn't here, so it's all good
             pass
-        bestCard, bestColor = stratFinishCurrentColor(thisPlayer, thisGame, sameColorPlay,
+        bestCard, bestColor = stratFinishCurrentColor(gLogg, thisPlayer, thisGame,
+                                                      sameColorPlay,
                                                       sameColorSpecialPlay, wildPlay,
                                                       diffColorPlay, **sParms)
     else:
@@ -1603,7 +1624,24 @@ def parallelGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
                  design:dict, designUseCounts:dict, startPlayer, cardPoints,
                  rndSeed, allResults:list, resultsDF:pd.DataFrame, gameRunFiles:list):
     '''
-    blah
+    TODO: need to return results, not just add inplace
+    :param indx:
+    :param eLogg:
+    :poaram MCSims:
+    :param gameDescrip:
+    :param logLevel:
+    :param playerNames:
+    :param playerStrats:
+    :param playerParams:
+    :param design:
+    :param designUseCounts:
+    :param startPlayer:
+    :param cardPoints:
+    :param rndSeed:
+    :param allResults:
+    :param resultsDF:
+    :param gameRunFiles:
+    :return indx:
     '''
 
     # talk
@@ -1643,12 +1681,12 @@ def parallelGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
         # update strategy usage count
         designUseCounts[strat][paramRnd] += 1
         # create the player
-        players[pIndx] = Player(player, strat, params)
+        players[pIndx] = Player(gLogg, player, strat, params)
         # talk
         gLogg.info('Player %s created using strategy %s', player, stratStr)
 
     # run the game
-    thisGame = Game(loggGameName, players, startPlayer, cardPoints, rndSeed)
+    thisGame = Game(gLogg, loggGameName, players, startPlayer, cardPoints, rndSeed)
     allResults[indx] = thisGame.play()
 
     # update the results dataframe
@@ -1733,23 +1771,26 @@ def parallelGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
     eLogg.info('\nGame results serialized to %s', filName)
     gameRunFiles[indx] = filName
 
-    return None
+    return indx
 
 
 ''' EXECUTE '''
 if __name__ == '__main__':
     # get the parameters
-    MCSims = 10
-    playerNames =['A', 'B', 'C', 'D']
-    startPlayer = None
-    rndSeed = None
-    cardPoints = True
-    experDescrip = gameDescrip = 'Test'
-    debug = True
-    playerStrats = [None]*len(playerNames)
-    playerParams = [None]*len(playerNames)
-    #(MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-    # rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
+    hardCodeDebug = False # TODO: this will go away
+    if hardCodeDebug:
+        MCSims = 10
+        playerNames =['A', 'B', 'C', 'D']
+        startPlayer = None
+        rndSeed = None
+        cardPoints = True
+        experDescrip = gameDescrip = 'Test'
+        debug = True
+        playerStrats = [None]*len(playerNames)
+        playerParams = [None]*len(playerNames)
+    else:
+        (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
+        rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
     logLevel = [20, 10][int(debug)] # 10=DEBUG+, 20=INFO+
 
     # start experiment logging
@@ -1794,8 +1835,8 @@ if __name__ == '__main__':
                             gameRunFiles)
     
     with multiprocessing.Pool() as pool:
-        for (indx, _) in pool.imap(paraGame, range(MCSims)):
-            eLogg.debug('Parallel run %d', indx)
+        for res in pool.imap(paraGame, range(MCSims)):
+            eLogg.debug('Parallel run %d complete', res)
 
     # compute some possibly-useful data
     # map strat+params to integers
