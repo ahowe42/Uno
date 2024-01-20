@@ -1620,7 +1620,7 @@ def designExperiment():
     return design
 
 
-
+# game runner
 def setupRunGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
                  playerNames:list, playerStrats:list, playerParams:list,
                  design:dict, startPlayer, cardPoints, rndSeed):
@@ -1769,7 +1769,7 @@ def setupRunGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
     gLogg.info('\nGame results serialized to %s', filName)
     eLogg.info('\nGame results serialized to %s', filName)
 
-    return indx, stratParams, gameResults, resultsDF, filName
+    return indx, stratParams, gameResults, resultsDF, filName[:-3]
 
 
 ''' EXECUTE '''
@@ -1884,16 +1884,21 @@ if __name__ == '__main__':
                 if designUseCounts[strat][pIndx] == 0:
                     eLogg.info(design[strat][pIndx])
 
-    # winner summary TODO: display not going to log
-    eLogg.info('Winner counts by strategy and start')
-    winSummary = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
+    # winner summary
+    eLogg.info('Winner frequencies by strategy and start')
+    winSummary_StratStart = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
         ['winner'].count().sort_values(ascending=False)
-    eLogg.info(winSummary)
+    eLogg.info(winSummary_StratStart)
 
-    eLogg.info('Winner counts by start')
-    winSummary = resultsDF.groupby(by='winner_started')['winner'].count().\
+    eLogg.info('Winner frequencies by strategy')
+    winSummary_Strat = resultsDF.groupby(by='winner_strat_params')['winner'].count().\
         sort_values(ascending=False)
-    eLogg.info(winSummary)
+    eLogg.info(winSummary_Strat)
+
+    eLogg.info('Winner frequencies by start')
+    winSummary_Start = resultsDF.groupby(by='winner_started')['winner'].count().\
+        sort_values(ascending=False)
+    eLogg.info(winSummary_Start)
 
     # timing
     MCTimeStp = dt.datetime.now()
@@ -1906,8 +1911,9 @@ if __name__ == '__main__':
                          'playerStrats':playerStrats, 'playerParams':playerParams,
                          'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
                          'design':design, 'designUseCounts':designUseCounts,
-                         'resultsDF':resultsDF, 'winSummary':winSummary,
-                         'gameRunFiles':gameRunFiles}
+                         'resultsDF':resultsDF, 'allResults':allResults,
+                         'winSummaries':[winSummary_StratStart, winSummary_Strat, winSummary_Start],
+                         'gameRunFiles':gameRunFiles,}
     filName = './output/'+loggExpName+'.p'
     pickle.dump(experimentResults, file=open(filName, 'wb'))
     eLogg.info('Experiment results logged & serialized to %s.*'%filName[:-2])
