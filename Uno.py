@@ -1,8 +1,4 @@
 '''
-# TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
-with multiprocessing.Pool() as pool:
-    for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
-        results[indx] = expd
 # TODO: someday refactor strategies and how playable cards are passed
 '''
 from itertools import product
@@ -13,8 +9,7 @@ from dotenv import dotenv_values
 import logging
 import time
 import datetime as dt
-#import multiprocessing
-from IPython.display import display
+import multiprocessing
 import numpy as np
 import ipdb
 import re
@@ -84,6 +79,7 @@ def getCreateLogger(name:str, file:str=None, level:int=0):
 def parseArgs():
     '''
     Function to parse the command line inputs.
+    :return parallel: boolean flag; True = parallel run, False = sequential run
     :return MCSims: integer number of simulations in experiment
     :return playerNames: list of string player names 
     :return startPlayer: optional (None) starting player index
@@ -106,49 +102,53 @@ def parseArgs():
                         help='Optional config file to read, ignoring all other arguments')
     
     # required (not really, but nearly)
+    parser.add_argument('--para', type=str, default='True',
+                        help='Flag to run games in parallel, rather than in sequence (default=True)')
     parser.add_argument('--sims', type=int, help='Number of simulations in experiment')
     parser.add_argument('--player', type=str, action='append',
                         help='Name of player, must be at least 2')
     # optional
     parser.add_argument('--startPlayer', type=int, default=None,
                         help='Starting player index (default=None)')
-    parser.add_argument('--points', type=bool, default=True,
+    parser.add_argument('--points', type=str, default='True',
                         help='Flag to give cards point values (default=True)')
     parser.add_argument('--eDescrip', type=str, default='Test',
                         help='Description test for experiment (default=Test)')
     parser.add_argument('--gDescrip', type=str, default='Test',
                         help='Description test for games (default=Test)')
     parser.add_argument('--seed', type=int, default=None, help='PRNG seed (default=None)')
-    parser.add_argument('--debug', type=bool, default=True,
+    parser.add_argument('--debug', type=str, default='True',
                         help='Print extra debugging messages to logs (default=True)')
 
-    # parse them
+    # parse them TODO: are bools coming through correctly?
     args = parser.parse_args()
     if args.config is not None:
         config = args.config
-        (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-         rndSeed, debug, playerStrats, playerParams) = parseCnfg(config)
+        (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+         gameDescrip, rndSeed, debug, playerStrats, playerParams) = parseCnfg(config)
     else:
+        parallel = args.para == 'True'
         MCSims = args.sims
         playerNames = args.player
         startPlayer = args.startPlayer
-        cardPoints = args.points
+        cardPoints = args.points == 'True'
         experDescrip = args.eDescrip
         gameDescrip = args.gDescrip
         rndSeed = args.seed
-        debug = args.debug
+        debug = args.debug == 'True'
         config = None
         playerStrats = [None]*len(playerNames)
         playerParams = [None]*len(playerNames)
 
-    return (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-            rndSeed, debug, config, playerStrats, playerParams)
+    return (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+            gameDescrip, rndSeed, debug, config, playerStrats, playerParams)
 
 
 def parseCnfg(configFile:str):
     '''
     Function to parse the config file.
     :param configFile: full path to file with simulation configuration
+    :return parallel: boolean flag; True = parallel run, False = sequential run
     :return MCSims: integer number of simulations in experiment
     :return playerNames: list of string player names 
     :return startPlayer: optional (None) starting player index
@@ -166,31 +166,32 @@ def parseCnfg(configFile:str):
     config = dotenv_values(configFile)
 
     # parse values
-    MCSims = int(config['sims'])
+    parallel = config['parallel'] == 'True'
+    MCSims = int(config['numberSims'])
     startPlayer = config.get('startPlayer', None)
-    cardPoints = bool(config.get('points', True))
+    cardPoints = config.get('cardPoints', True) == 'True'
     experDescrip = config.get('eDescrip', 'Test')
     gameDescrip = config.get('gDescrip', 'Test')
     rndSeed = config.get('seed', None)
     if rndSeed is not None:
         rndSeed = int(rndSeed)
-    debug = bool(config.get('debug', True))
+    debug = config.get('debug', True) == 'True'
 
     # parse players data
     playerNames = []
     playerStrats = []
     playerParams = []
     for indx in range(8):
-        if config['NAME_%d'%indx] is not None:
-            playerNames.append(config['NAME_%d'%indx])
+        if config['name_%d'%indx] is not None:
+            playerNames.append(config['name_%d'%indx])
             playerStrats.append(None)
             playerParams.append(None)
             # there is a player, so check for a strat
-            if config['STRAT_%d'%indx] is not None:
-                playerStrats[indx] = globals()[config['STRAT_%d'%indx]]
-                playerParams[indx] = eval(config['PARAMS_%d'%indx])
+            if config['strat_%d'%indx] is not None:
+                playerStrats[indx] = globals()[config['strat_%d'%indx]]
+                playerParams[indx] = eval(config['params_%d'%indx])
     
-    return (MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+    return (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
             gameDescrip, rndSeed, debug, playerStrats, playerParams)
 
 
@@ -340,7 +341,7 @@ class Card():
 
 
 class Deck():
-    def __init__(self, cards:list[Card]=None, shuffle:bool=True,
+    def __init__(self, gLogg, cards:list[Card]=None, shuffle:bool=True,
                  cardPoints:bool=True):
         '''
         Build the deck of Uno cards. For each color in a standard deck, there
@@ -348,11 +349,14 @@ class Deck():
         This is a total of 108 cards. The deck is defined as a list of cards.
         :param cards: optional (default=None) list of cards for this deck; if
             None, the deck is built
+        :param gLogg: logger
         :param shuffle: optional (default=True) flag indicating whether or not
             to shuffle the cards generated
         :param cardPoints: optional (default=True) flag to give cards points
             if False, every card is only worth 1 point
         '''
+
+        self.gLogg = gLogg
 
         if cards is None:
             # define possible indices
@@ -405,14 +409,14 @@ class Deck():
             # ensure there are enough cards in the deck
             if (thisGame.discardPile is not None) & (self.size <= cards):
                 # not enough cards, so reset the deck
-                gLogg.info('Only %d card(s), so rebuilding the deck from discard pile',
-                    self.size)
+                self.gLogg.info('Only %d card(s), so rebuilding the deck from discard pile',
+                                self.size)
                 thisGame.rebuildDeck()
                 rebuild = True
             elif self.size <= cards:
                 # this should never happen
-                gLogg.debug('Only %d cards, but discard is empty',
-                    self.size)
+                self.gLogg.debug('Only %d cards, but discard is empty',
+                                 self.size)
                 raise ValueError('Not enough cards to deal')
 
         # if deck was rebuilt, need to refer, this time, to thisGame
@@ -433,13 +437,16 @@ class Deck():
 
 
 class Hand():
-    def __init__(self, cards:list[Card]):
+    def __init__(self, gLogg, cards:list[Card]):
         '''
         Build a hand of cards. The hand is an enumeration-based dict of cards.
+        :param gLogg: logger
         :param cards: list of cards initially dealt to this hand; each card
             should be represented by a tuple of (index into the deck, the
             actual card).
         '''
+
+        self.gLogg = gLogg
 
         # initialize the hand
         self.currCards = OrderedDict()
@@ -543,9 +550,9 @@ class Hand():
         '''
 
         # talk
-        gLogg.info('\nPlaying %s', self.currCards[card][1])
+        self.gLogg.info('\nPlaying %s', self.currCards[card][1])
         if colorIndex is not None:
-            gLogg.info('\nNew color = %s', COLORS[colorIndex])
+            self.gLogg.info('\nNew color = %s', COLORS[colorIndex])
         # move to played cards
         this = self.currCards.pop(card)
         self.playedCards[card] = this
@@ -602,6 +609,7 @@ class Hand():
             # show the stackables
             prt += '\nStackable Matrix\n%s'%\
                 np.array([str(s[0])[0] for s in
+                          # TODO: will the below throw an exception in parallel?
                           thisGame.players[0].hand.canStack.flatten()]).\
                 reshape(self.cardCount, self.cardCount)
 
@@ -647,14 +655,18 @@ class Hand():
 
 
 class Player():
-    def __init__(self, name:str, strategy, strategyParams:dict, hand:Hand=None):
+    def __init__(self, gLogg, name:str, strategy, strategyParams:dict,
+                 hand:Hand=None):
         '''
         Define an Uno player.
+        :param gLogg: logger
         :param name: string name of player
         :param strategy: callable implementing player's strategy
         :param strategyParams: dict of kwarg parameters for strategy callable
         :param hand: optional (default=None) Hand object for player
         '''
+
+        self.gLogg = gLogg
         self.name = name
         self.strategy = strategy
         self.strategyParams = strategyParams
@@ -683,8 +695,8 @@ class Player():
             if thisGame.currColor is None:
                 # choose color as most frequent in hand
                 bestColor = self.hand.colorOrders[0]
-                gLogg.debug('\nWild on discard with no color, so choosing %s, %r',
-                    COLORS[bestColor], self.hand.colorOrders[0])
+                self.gLogg.debug('\nWild on discard with no color, so choosing %s, %r',
+                                 COLORS[bestColor], self.hand.colorOrders[0])
                 thisGame.currColor = bestColor
 
         # determine playable cards, and maybe draw one
@@ -703,23 +715,23 @@ class Player():
             # wild +4s only playable if none of the current color in the hand
             if len(self.hand.colors[thisGame.currColor]) == 0:
                 playableCards.extend(self.hand.wilds[1])
-                gLogg.debug('\nNo %s color cards, so wild +4 is playable',
-                    COLORS[thisGame.currColor])
+                self.gLogg.debug('\nNo %s color cards, so wild +4 is playable',
+                                 COLORS[thisGame.currColor])
             # get uniques
             playableCards = set(playableCards)
 
             # do we need to draw a card?
             if (len(playableCards) == 0) & (whilePass == 0):
-                gLogg.info('\nNo cards to play, drawing 1')
+                self.gLogg.info('\nNo cards to play, drawing 1')
                 card = thisGame.deck.deal(1, thisGame)[0]
                 self.hand.addCard(card)
-                gLogg.info('\nDealt %s', card[1])
+                self.gLogg.info('\nDealt %s', card[1])
             else:
                 break
             whilePass += 1
 
         # show hand
-        gLogg.debug('\n%s', self.hand.showHand(summary=False))
+        self.gLogg.debug('\n%s', self.hand.showHand(summary=False))
 
         # can we play?
         if len(playableCards) > 0:
@@ -759,26 +771,27 @@ class Player():
                 if playables[handIndx][1] in [4, 6]:
                     diffColorPlay.append((handIndx, card))
                 # talk
-                gLogg.debug('\nPlayable %d = (%d, %s): reason = %d', handIndx,
-                    *self.hand.currCards[handIndx], playables[handIndx][1])
+                self.gLogg.debug('\nPlayable %d = (%d, %s): reason = %d', handIndx,
+                                 *self.hand.currCards[handIndx], playables[handIndx][1])
             # summarize the summary
             sameColor = len(sameColorPlay)
             sameColorSpecial = len(sameColorSpecialPlay)
             diffColor = len(diffColorPlay)
             wilds = len(wildPlay)
             # talk
-            gLogg.debug('\nPlayable: %d same colors, %d same color specials, %d wilds, %d different colors',
-                sameColor, sameColorSpecial, wilds, diffColor)
-            gLogg.debug('\nPlayable same colors: %s\nPlayable same color specials, %s',
-                       sameColorPlay, sameColorSpecialPlay)
-            gLogg.debug('\nPlayable wilds: %s\nPlayable different colors: %s',
-                       wildPlay, diffColorPlay)
+            self.gLogg.debug('\nPlayable: %d same colors, %d same color specials, %d wilds, %d different colors',
+                             sameColor, sameColorSpecial, wilds, diffColor)
+            self.gLogg.debug('\nPlayable same colors: %s\nPlayable same color specials, %s',
+                             sameColorPlay, sameColorSpecialPlay)
+            self.gLogg.debug('\nPlayable wilds: %s\nPlayable different colors: %s',
+                             wildPlay, diffColorPlay)
 
             ''' now determine the best card to play '''
             # execute the strategy
-            bestCard, bestColor = self.strategy(self, thisGame, sameColorPlay,
-                                                sameColorSpecialPlay, wildPlay,
-                                                diffColorPlay, **self.strategyParams)
+            bestCard, bestColor = self.strategy(self.gLogg, self, thisGame,
+                                                sameColorPlay, sameColorSpecialPlay,
+                                                wildPlay, diffColorPlay,
+                                                **self.strategyParams)
 
             # just pick the highest value playable card - should not happen
             if bestCard is None:
@@ -786,35 +799,37 @@ class Player():
                           in playables.keys()]
                 playMe.sort(key=lambda x: x[1][1].points)
                 bestCard = playMe[-1][0]
-                gLogg.debug('\nPlay highest value playable card: %s',
-                           self.hand.currCards[bestCard][1])
+                self.gLogg.debug('\nPlay highest value playable card: %s',
+                                 self.hand.currCards[bestCard][1])
 
             # play the best card
             if bestCard is not None:
-                gLogg.info('\nBest card = %s', self.hand.currCards[bestCard][1])
+                self.gLogg.info('\nBest card = %s', self.hand.currCards[bestCard][1])
                 thisGame.addToDiscard(self.hand.currCards[bestCard], bestColor)
                 _ = self.hand.playCard(bestCard, bestColor)
         else:
-            gLogg.info('\nNo cards to play - skipping turn')        
+            self.gLogg.info('\nNo cards to play - skipping turn')        
 
         # yell Uno!
         if self.hand.cardCount == 1:
-            gLogg.info('\nUno!')
+            self.gLogg.info('\nUno!')
         elif self.hand.cardCount == 0:
-            gLogg.info('\nI won!')
+            self.gLogg.info('\nI won!')
 
         # update the card count for this player
         thisGame.playerCardsCounts[thisGame.currPlayer] = self.hand.cardCount
-        gLogg.debug('\nPlayer %s now has %d cards, %d points',
-            thisGame.players[thisGame.currPlayer].name, self.hand.cardCount, self.hand.points)
+        self.gLogg.debug('\nPlayer %s now has %d cards, %d points',
+                         thisGame.players[thisGame.currPlayer].name,
+                         self.hand.cardCount, self.hand.points)
 
 
 class Game():
-    def __init__(self, descrip:str, players:list, start:int=0, cardPoints:bool=True,
-                 rndSeed:int=None):
+    def __init__(self, gLogg, descrip:str, players:list, start:int=0,
+                 cardPoints:bool=True, rndSeed:int=None):
         '''
         Initialize a game of Uno.
-        :parm descrip: string description of game
+        :param gLogg: logger
+        :param descrip: string description of game
         :param players: list of player objects
         :param start: optional (default=None) index of starting player; if not
             provided, starter is randomly selected
@@ -823,6 +838,7 @@ class Game():
         :param rndSeed: optional (default=None) seed for numpy prng
         '''
 
+        self.gLogg = gLogg
         # set the random state
         if rndSeed is None:
             rndSeed = dt.datetime.now()
@@ -830,7 +846,7 @@ class Game():
                 rndSeed.microsecond
         self.rndSeed = rndSeed
         np.random.seed(rndSeed)
-        gLogg.debug('Random seed = %d', rndSeed)
+        self.gLogg.debug('Random seed = %d', rndSeed)
 
         # get inputs & set players data
         self.name = descrip
@@ -842,13 +858,13 @@ class Game():
         # get the Deck & put the top card on the pile
         self.rebuilt = 0
         self.rebuiltCards = []
-        self.deck = Deck(cardPoints=self.cardPoints)
+        self.deck = Deck(gLogg, cardPoints=self.cardPoints)
         self.discardPile = []
         self.addToDiscard(self.deck.deal(1)[0])
 
         # deal 7 cards to each player
         for player in self.players:
-            player.addHand(Hand(self.deck.deal(7)))
+            player.addHand(Hand(self.gLogg, self.deck.deal(7)))
         # remember each player's number of Cards
         self.playerCardsCounts = [7]*self.playersCount
 
@@ -859,6 +875,7 @@ class Game():
         else:
             self.start = start
             self.currPlayer = start
+        gLogg.info('Game starting with player %s', self.players[self.start])
 
         # prepare to handle first discard card = skip;
         # reverse, wilds, and +2 handled elsewhere
@@ -868,11 +885,11 @@ class Game():
         self.nextPlayer = self.__nextPlayer__()
 
         # talk
-        gLogg.info('\n%s initialized with players', self.name)
+        self.gLogg.info('\n%s initialized with players', self.name)
         for player in self.players:
-            gLogg.info(player)
-        gLogg.info('\nInitial discard card = (%d = %s)', *self.discardPile[0])
-        gLogg.info('\n%s goes first', self.players[self.currPlayer].name)
+            self.gLogg.info(player)
+        self.gLogg.info('\nInitial discard card = (%d = %s)', *self.discardPile[0])
+        self.gLogg.info('\n%s goes first', self.players[self.currPlayer].name)
 
     def __nextPlayer__(self):
         '''
@@ -896,7 +913,7 @@ class Game():
 
         # set the next player
         nxt = (curr + self.playersOrder) % self.playersCount
-        gLogg.debug('\nNext player = %s', self.players[nxt].name)
+        self.gLogg.debug('\nNext player = %s', self.players[nxt].name)
         return nxt
 
     def addToDiscard(self, card:Card, colorIndex:int=None):
@@ -908,7 +925,7 @@ class Game():
         '''
         # add
         self.discardPile.append(card)
-        gLogg.debug('\n%s added to discard', card[1])
+        self.gLogg.debug('\n%s added to discard', card[1])
 
         # define the deck index of the current card
         self.currCardIndex = card[0]
@@ -919,9 +936,9 @@ class Game():
         else:
             self.currColor = colorIndex
         if self.currColor is not None:
-            gLogg.debug('\nCurrent color = %s', COLORS[self.currColor])
+            self.gLogg.debug('\nCurrent color = %s', COLORS[self.currColor])
         else:
-            gLogg.debug('\nNo current color')
+            self.gLogg.debug('\nNo current color')
         # define current special & value
         self.currSpecial = card[1].specialIndex
         self.currValue = card[1].valueIndex
@@ -933,22 +950,22 @@ class Game():
         '''
 
         # talk
-        gLogg.info('\n%s playing', self.players[self.currPlayer].name)
+        self.gLogg.info('\n%s playing', self.players[self.currPlayer].name)
         # make player draw cards if necessary
         if self.currSpecial is not None:
             if self.currSpecial == 2:
                 # +2 so draw 2
-                gLogg.info('\n +2 on discard pile, so drawing 2')
+                self.gLogg.info('\n +2 on discard pile, so drawing 2')
                 for (indx, card) in enumerate(self.deck.deal(2, self)):
-                    gLogg.info('\nDealt %s', card[1])
+                    self.gLogg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==1))
         elif self.currWild is not None:
             if self.currWild == 1:
                 # wild+4, so draw 4
-                gLogg.info('\nWild +4 on discard pile, so drawing 4')
+                self.gLogg.info('\nWild +4 on discard pile, so drawing 4')
                 for (indx, card) in enumerate(self.deck.deal(4, self)):
-                    gLogg.info('\nDealt %s', card[1])
+                    self.gLogg.info('\nDealt %s', card[1])
                     self.players[self.currPlayer].hand.addCard(card,
                                                                updateSummary=(indx==3))
         # take the turn
@@ -962,7 +979,7 @@ class Game():
         status = '; '.join(['%s has %d cards worth %d points'%\
                             (player.name, player.hand.cardCount, player.hand.points)
                             for player in self.players])
-        gLogg.info('\n'+status)
+        self.gLogg.info('\n'+status)
 
     def play(self):
         '''
@@ -975,7 +992,8 @@ class Game():
         # timing
         self.gameTimeStt = dt.datetime.now()
         self.gamePerfStt = time.perf_counter()
-        gLogg.debug('\n%s started on %s', self.name, self.gameTimeStt.isoformat()[:16])
+        self.gLogg.debug('\n%s started on %s', self.name,
+                         self.gameTimeStt.isoformat()[:16])
 
         # iterate over players, each taking their turn
         while min(self.playerCardsCounts) > 0:
@@ -983,17 +1001,17 @@ class Game():
 
         # post-game summary
         self.postGameSummary()
-        gLogg.info('\n%s won!', self.players[self.winner].name)
+        self.gLogg.info('\n%s won!', self.players[self.winner].name)
 
         # timing
         self.gameTimeStp = dt.datetime.now()
         self.gamePerfStp = time.perf_counter()
 
         # talk
-        gLogg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
-                  self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
-                  self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
-                  self.discardSummary[0])
+        self.gLogg.info('%s ended on %s (%0.3f(s)): %s won in %d turns, having played %d points; %d total cards played!',
+                        self.name, self.gameTimeStp, self.gamePerfStp - self.gamePerfStt,
+                        self.players[self.winner].name, *self.playerPlayed[self.winner][:2],
+                        self.discardSummary[0])
 
         return {'timing':(self.gameTimeStt, self.gamePerfStt, self.gameTimeStp,
                           self.gamePerfStp), 'winner':self.winner,
@@ -1014,48 +1032,50 @@ class Game():
         self.rebuilt += 1
 
         # get discards sans top card for new deck & shuffle
-        gLogg.debug('\nAdding & shuffling discard pile sans top (%d)',
-                   len(self.discardPile[:-1]))
+        self.gLogg.debug('\nAdding & shuffling discard pile sans top (%d)',
+                         len(self.discardPile[:-1]))
         cards = self.discardPile[:-1]
         np.random.shuffle(cards)
         # add the remainder of the deck: 42 is just a placeholder, as it'll be stripped
-        gLogg.debug('\nAdding remainder of deck (%d)', self.deck.size)
+        self.gLogg.debug('\nAdding remainder of deck (%d)', self.deck.size)
         cards.extend([(42, card) for card in self.deck.cards[-self.deck.size:]])
         # take all cards from each player *in reverse order* and add
         for player in self.players[::-1]:
-            gLogg.debug('\nAdding %s cards (%d)', player.name,
-                       len(player.hand.currCards))
+            self.gLogg.debug('\nAdding %s cards (%d)', player.name,
+                             len(player.hand.currCards))
             cards.extend(player.hand.currCards.values())
             player.hand.currCards = {}
         # add the top card
-        gLogg.debug('\nAdding the top discard (1)')
+        self.gLogg.debug('\nAdding the top discard (1)')
         cards += [self.discardPile[-1]]
         # remember the current color if top card is a wild
         if self.discardPile[-1][1].wildIndex is not None:
-            currColor = thisGame.currColor
+            currColor = self.currColor
         else:
             currColor = None
 
         # create new deck object
-        self.deck = Deck(cards=[card[1] for card in cards[::-1]], shuffle=False)
+        self.deck = Deck(self.gLogg, cards=[card[1] for card in cards[::-1]],
+                         shuffle=False)
 
         # add top card back to discard and ensure the current color is there
         # if top card is a wild
         self.discardPile = []
-        gLogg.debug('\nPutting back top discard')
+        self.gLogg.debug('\nPutting back top discard')
         self.addToDiscard(self.deck.deal(1)[0], currColor)
 
         # deal back all cards
         for (pindx, player) in enumerate(self.players):
             # get the cards dealt & add them
             cards = self.deck.deal(self.playerCardsCounts[pindx])
-            gLogg.debug('\nAdding back %d cards to %s', len(cards), player.name)
+            self.gLogg.debug('\nAdding back %d cards to %s', len(cards),
+                             player.name)
             for (cindx, card) in enumerate(cards):
                 summary = (cindx == self.playerCardsCounts[pindx]-1)
                 player.hand.addCard(card, updateSummary=summary)
         
         # talk
-        gLogg.info('\nDeck rebuilt')
+        self.gLogg.info('\nDeck rebuilt')
 
     def cardsSummary(self, cards):
         '''
@@ -1178,7 +1198,7 @@ def parseCardsList(cardsInHandList:list, draw2:int=False, revSkp:int=False,
 
 
 # Game strategy functions
-def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
+def stratFinishCurrentColor(gLogg, thisPlayer:Player, thisGame:Game, sameColorPlay,
                             sameColorSpecialPlay, wildPlay, diffColorPlay,
                             hurtFirst:bool=False, hailMary:bool=False,
                             countNotPoint:bool=False):
@@ -1189,6 +1209,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     to play a wild. If none of these, it will try to play a different color card.
     In the last 2 cases, the color is chosen according to whatever color has the
     most total points in the hand.
+    :param gLogg: logger
     :param thisPlayer: current player
     :param thisGame: current game
     :param sameColorPlay: list of (hand index, card) playable same color value
@@ -1379,7 +1400,7 @@ def stratFinishCurrentColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     return bestCard, bestColor
 
 
-def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
+def stratSwitchMaxColor(gLogg, thisPlayer:Player, thisGame:Game, sameColorPlay,
                         sameColorSpecialPlay, wildPlay, diffColorPlay,
                         hurtFirst:bool=False, hailMary:bool=False,
                         addWildPoints:bool=False, countNotPoint:bool=False):
@@ -1390,6 +1411,7 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
     is the current color, it calls stratFinishCurrentColor. Once the best playable
     color is selected, it will choose a card to play using the priority order of
     wilds, special cards, then value cards (using the highest value of course).
+    :param gLogg: logger
     :param thisPlayer: current player
     :param thisGame: current game
     :param sameColorPlay: list of (hand index, card) playable same color value
@@ -1461,7 +1483,8 @@ def stratSwitchMaxColor(thisPlayer:Player, thisGame:Game, sameColorPlay,
         except NameError:
             # this wasn't here, so it's all good
             pass
-        bestCard, bestColor = stratFinishCurrentColor(thisPlayer, thisGame, sameColorPlay,
+        bestCard, bestColor = stratFinishCurrentColor(gLogg, thisPlayer, thisGame,
+                                                      sameColorPlay,
                                                       sameColorSpecialPlay, wildPlay,
                                                       diffColorPlay, **sParms)
     else:
@@ -1597,25 +1620,183 @@ def designExperiment():
     return design
 
 
+# game runner
+def setupRunGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
+                 playerNames:list, playerStrats:list, playerParams:list,
+                 design:dict, startPlayer, cardPoints, rndSeed):
+    '''
+    Setup and run a game.
+    :param indx: integer index of game in simulation
+    :param eLogg: experiment logger
+    :poaram MCSims: integer number of games in simulation
+    :param gameDescrip: string brief game description
+    :param logLevel: integer logging level
+    :param playerNames: list of player names
+    :param playerStrats: list of player strategies (or [None,...])
+    :param playerParams: list of player strategy parameters (or [None,...])
+    :param design: complete experiment design from designExperiment
+    :param startPlayer: optional (default=None) integer index of starting player
+    :param cardPoints: optional (default=True) flag to give cards points
+    :param rndSeed: optional (default=None) PRNG seed
+    :return indx: integer index of game in simulation
+    :return stratParams: list of player's strategies & parameters
+    :return gameResults: game results from Game.play()
+    :return resultsDF: game index indexed dataframe with single row of game results
+    :return filName: file name of serialized (and logged with .log extension) results
+    '''
+
+    # talk
+    eLogg.info('Game %d of %d', indx+1, MCSims)
+
+    # setup a game with this config
+    sttTS = dt.datetime.now()
+    loggGameName = 'Uno_Game_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
+        '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')
+    
+    # start logger
+    loggFilName = './output/%s.log'%loggGameName
+    eLogg.info('Logging game to %s', loggFilName)
+    gLogg = getCreateLogger(name=loggGameName, file=loggFilName, level=logLevel)
+    
+    # setup players with randomly-selected strategies, unless defined in a
+    # config file
+    players = [None]*len(playerNames)
+    stratParams = [None]*len(playerNames)
+    for (pIndx, player) in enumerate(playerNames):
+        if playerStrats[pIndx] is None:
+            gLogg.debug('Randomizing strategy for %s', playerNames[pIndx])
+            # get random strategy & params
+            strat = strats[int(np.random.rand()>0.5)]
+            paramRnd = np.random.randint(len(design[strat]))
+            params = design[strat][paramRnd]
+        else:
+            gLogg.debug('Using strategy from config for %s', playerNames[pIndx])
+            strat = playerStrats[pIndx]
+            params = playerParams[pIndx]
+            paramRnd = design[strat].index(params)
+
+        # build strat+params string
+        stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
+        # save the selected strat+params for recording after the game
+        stratParams[pIndx] = [strat, params, stratStr, paramRnd]
+        # create the player
+        players[pIndx] = Player(gLogg, player, strat, params)
+        # talk
+        gLogg.info('Player %s created using strategy %s', player, stratStr)
+
+    # run the game
+    thisGame = Game(gLogg, loggGameName, players, startPlayer, cardPoints, rndSeed)
+    gameResults = thisGame.play()
+
+    # create the single row results dataframe
+    # TODO: can this be done better?
+    resultsDF = pd.DataFrame(index=[indx])
+    resultsDF.loc[indx, 'winner'] = gameResults['winner']
+    resultsDF.loc[indx, 'num_players'] = len(players)
+    resultsDF.loc[indx, 'start_player'] = gameResults['start']
+    resultsDF.loc[indx, 'cardPoints'] = cardPoints
+    resultsDF.loc[indx, 'rebuilt'] = gameResults['times rebuilt']
+    resultsDF.loc[indx, 'time_sec'] = gameResults['timing'][3] - gameResults['timing'][1]
+    resultsDF.loc[indx, 'cards_played'] = gameResults['discard summary'][0]
+    resultsDF.loc[indx, 'points_played'] = gameResults['discard summary'][1]
+    resultsDF.loc[indx, 'wilds_played'] = gameResults['discard summary'][-1][0]
+    resultsDF.loc[indx, 'wildplus4s_played'] = gameResults['discard summary'][-1][1]
+    resultsDF.loc[indx, 'revs_played'] = gameResults['discard summary'][-2][0]
+    resultsDF.loc[indx, 'skps_played'] = gameResults['discard summary'][-2][1]
+    resultsDF.loc[indx, 'plus2s_played'] = gameResults['discard summary'][-2][2]
+    # add player-specific data
+    for (pindx, _) in enumerate(players):
+        resultsDF.loc[indx, 'player%d_strat_params'%pindx] = stratParams[pindx][2]
+        resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0].__name__
+        resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
+            get('hurtFirst', False)
+        resultsDF.loc[indx, 'player%d_stratHM'%pindx] = stratParams[pindx][1].\
+            get('hailMary', False)
+        resultsDF.loc[indx, 'player%d_stratWP'%pindx] = stratParams[pindx][1].\
+            get('addWildPoints', False)
+        resultsDF.loc[indx, 'player%d_stratCP'%pindx] = stratParams[pindx][1].\
+            get('countNotPoint', False)
+        resultsDF.loc[indx, 'player%d_cards_played'%pindx] =\
+            gameResults['player played summary'][pindx][0]
+        resultsDF.loc[indx, 'player%d_points_played'%pindx] =\
+            gameResults['player played summary'][pindx][1]
+        resultsDF.loc[indx, 'player%d_wilds_played'%pindx] =\
+            gameResults['player played summary'][pindx][-1][0]
+        resultsDF.loc[indx, 'player%d_wildplus4s_played'%pindx] =\
+            gameResults['player played summary'][pindx][-1][1]
+        resultsDF.loc[indx, 'player%d_revs_played'%pindx] =\
+            gameResults['player played summary'][pindx][-2][0]
+        resultsDF.loc[indx, 'player%d_skps_played'%pindx] =\
+            gameResults['player played summary'][pindx][-2][1]
+        resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] =\
+            gameResults['player played summary'][pindx][-2][2]
+        resultsDF.loc[indx, 'player%d_remain_cards'%pindx] =\
+            gameResults['player remaining summary'][pindx][0]
+        resultsDF.loc[indx, 'player%d_remain_points'%pindx] =\
+            gameResults['player remaining summary'][pindx][1]
+        resultsDF.loc[indx, 'player%d_rank'%pindx] = gameResults['player ranking'][pindx]
+    # add winner data again as separate features
+    winr = gameResults['winner']
+    resultsDF.loc[indx, 'winner_strat_params'] = stratParams[winr][2]
+    resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0].__name__
+    resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
+        get('hurtFirst', False)
+    resultsDF.loc[indx, 'winner_stratHM'] = stratParams[winr][1].\
+        get('hailMary', False)
+    resultsDF.loc[indx, 'winner_stratWP'] = stratParams[winr][1].\
+        get('addWildPoints', False)
+    resultsDF.loc[indx, 'winner_stratCP'] = stratParams[winr][1].\
+        get('countNotPoint', False)
+    resultsDF.loc[indx, 'winner_cards_played'] =\
+        gameResults['player played summary'][winr][0]
+    resultsDF.loc[indx, 'winner_points_played'] =\
+        gameResults['player played summary'][winr][1]
+    resultsDF.loc[indx, 'winner_wilds_played'] =\
+        gameResults['player played summary'][winr][-1][0]
+    resultsDF.loc[indx, 'winner_wildplus4s_played'] =\
+        gameResults['player played summary'][winr][-1][1]
+    resultsDF.loc[indx, 'winner_revs_played'] =\
+        gameResults['player played summary'][winr][-2][0]
+    resultsDF.loc[indx, 'winner_skps_played'] =\
+        gameResults['player played summary'][winr][-2][1]
+    resultsDF.loc[indx, 'winner_plus2s_played'] =\
+        gameResults['player played summary'][winr][-2][2]
+
+    # serialize results
+    filName = loggFilName[:-4] + '.p'
+    pickle.dump({'results':gameResults, 'game':thisGame, 'log file':loggFilName},
+                file=open(filName, 'wb'))
+    gLogg.info('\nGame results serialized to %s', filName)
+    eLogg.info('\nGame results serialized to %s', filName)
+
+    return indx, stratParams, gameResults, resultsDF, filName[:-3]
+
+
 ''' EXECUTE '''
 if __name__ == '__main__':
     # get the parameters
-    #MCSims = 500
-    #playerNames =['A', 'B', 'C', 'D']
-    #startPlayer = None
-    #rndSeed = None
-    #cardPoints = True
-    #experDescrip = gameDescrip = 'Test'
-    #debug = True
-    (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-     rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
+    hardCodeDebug = False # TODO: this might go away, but for now makes some dev easier
+    if hardCodeDebug:
+        parallel = False
+        MCSims = 10
+        playerNames =['A', 'B', 'C', 'D']
+        startPlayer = None
+        rndSeed = None
+        cardPoints = True
+        experDescrip = gameDescrip = 'Test'
+        debug = True
+        playerStrats = [None]*len(playerNames)
+        playerParams = [None]*len(playerNames)
+    else:
+        (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+         gameDescrip, rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
     logLevel = [20, 10][int(debug)] # 10=DEBUG+, 20=INFO+
-
+    
     # start experiment logging
     experSttTS = dt.datetime.now()
     loggExpName = 'Uno_Experiment_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_',
                                            string=experDescrip)+'_'+\
-                                            experSttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+                                            experSttTS.strftime('%Y%m%d_%H%M%S_%f')
     print('Logging experiment to ./output/%s', loggExpName)
     eLogg = getCreateLogger(name=loggExpName, file='./output/'+loggExpName+'.log',
                             level=logLevel)
@@ -1630,8 +1811,9 @@ if __name__ == '__main__':
     MCPerfStt = time.perf_counter()
 
     # talk
-    eLogg.info('Experiment %s with %d games begun on %s', experDescrip, MCSims,
-               MCTimeStt.strftime('%Y%m%d_%H%M%S'))
+    eLogg.info('Experiment %s with %d games begun on %s, running in %s',
+               experDescrip, MCSims, MCTimeStt.strftime('%Y%m%d_%H%M%S'),
+               ['sequence', 'parallel'][int(parallel)])
     eLogg.info('Cards have points = %s', cardPoints)
     if rndSeed is not None:
         eLogg.info('Random seed = %d', rndSeed)
@@ -1641,138 +1823,49 @@ if __name__ == '__main__':
     else:
         eLogg.info('Starting player = randomized')
 
-    # run games serially
+    # setup to store results
     allResults = [None]*MCSims
-    resultsDF = pd.DataFrame(index=range(MCSims))
+    resultsDF = [None]*MCSims
     gameRunFiles = [None]*MCSims
-    # TODO: can everything here be run in parallel?
-    for indx in range(MCSims):
-        # talk
-        eLogg.info('Game %d of %d', indx+1, MCSims)
 
-        # setup a game with this config
-        sttTS = dt.datetime.now()
-        loggGameName = 'Uno_Game_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_', string=gameDescrip) +\
-            '_' + sttTS.strftime('%Y%m%d_%H%M%S_%f')[:-3]
+    if parallel:
+        # run in parallel
+        def thisParaGame(indx):
+            return setupRunGame(indx, eLogg, MCSims, gameDescrip, logLevel, playerNames,
+                                playerStrats, playerParams, design, startPlayer,
+                                cardPoints, rndSeed)
         
-        # start logger
-        loggFilName = './output/%s.log'%loggGameName
-        eLogg.info('Logging game to %s', loggFilName)
-        gLogg = getCreateLogger(name=loggGameName, file=loggFilName, level=logLevel)
-        
-        # setup players with randomly-selected strategies, unless defined in a
-        # config file
-        players = [None]*len(playerNames)
-        stratParams = [None]*len(playerNames)
-        for (pIndx, player) in enumerate(playerNames):
-            if playerStrats[pIndx] is None:
-                gLogg.debug('Randomizing strategy for %s', playerNames[pIndx])
-                # get random strategy & params
-                strat = strats[int(np.random.rand()>0.5)]
-                paramRnd = np.random.randint(len(design[strat]))
-                params = design[strat][paramRnd]
-            else:
-                gLogg.debug('Using strategy from config for %s', playerNames[pIndx])
-                strat = playerStrats[pIndx]
-                params = playerParams[pIndx]
-                paramRnd = design[strat].index(params)
-
-            # build strat+params string
-            stratStr = strat.__name__+'('+','.join([n+'='+str(p) for (n,p) in params.items()])+')'
-            # save the selected strat+params for recording after the game
-            stratParams[pIndx] = [strat.__name__, params, stratStr]
-            # update strategy usage count
-            designUseCounts[strat][paramRnd] += 1
-            # create the player
-            players[pIndx] = Player(player, strat, params)
+        with multiprocessing.Pool() as pool:
+            for (gameIndx, stratParams, gameResults, gameResDF, gameFilName) in\
+                pool.imap(thisParaGame, range(MCSims)):
+                # talk
+                eLogg.debug('Parallel run %d complete', gameIndx)
+                # save results
+                allResults[gameIndx] = gameResults
+                resultsDF[gameIndx] = gameResDF
+                gameRunFiles[gameIndx] = gameFilName
+                # update design use counts
+                for pIndx in range(len(playerNames)):
+                    designUseCounts[stratParams[pIndx][0]][stratParams[pIndx][-1]] += 1
+    else:
+        # run in sequence
+        for indx in range(MCSims):
+            gameIndx, stratParams, gameResults, gameResDF, gameFilName =\
+                setupRunGame(indx, eLogg, MCSims, gameDescrip, logLevel, playerNames,
+                             playerStrats, playerParams, design, startPlayer,
+                             cardPoints, rndSeed)
             # talk
-            gLogg.info('Player %s created using strategy %s', player, stratStr)
-
-        # run the game
-        thisGame = Game(loggGameName, players, startPlayer, cardPoints, rndSeed)
-        allResults[indx] = thisGame.play()
-
-        # update the results dataframe
-        resultsDF.loc[indx, 'winner'] = allResults[indx]['winner']
-        resultsDF.loc[indx, 'num_players'] = len(players)
-        resultsDF.loc[indx, 'start_player'] = allResults[indx]['start']
-        resultsDF.loc[indx, 'cardPoints'] = cardPoints
-        resultsDF.loc[indx, 'rebuilt'] = allResults[indx]['times rebuilt']
-        resultsDF.loc[indx, 'time_sec'] = allResults[indx]['timing'][3] -\
-            allResults[indx]['timing'][1]
-        resultsDF.loc[indx, 'cards_played'] = allResults[indx]['discard summary'][0]
-        resultsDF.loc[indx, 'points_played'] = allResults[indx]['discard summary'][1]
-        resultsDF.loc[indx, 'wilds_played'] = allResults[indx]['discard summary'][-1][0]
-        resultsDF.loc[indx, 'wildplus4s_played'] = allResults[indx]['discard summary'][-1][1]
-        resultsDF.loc[indx, 'revs_played'] = allResults[indx]['discard summary'][-2][0]
-        resultsDF.loc[indx, 'skps_played'] = allResults[indx]['discard summary'][-2][1]
-        resultsDF.loc[indx, 'plus2s_played'] = allResults[indx]['discard summary'][-2][2]
-        # add player-specific data
-        for (pindx, _) in enumerate(players):
-            resultsDF.loc[indx, 'player%d_strat_params'%pindx] = stratParams[pindx][2]
-            resultsDF.loc[indx, 'player%d_strat'%pindx] = stratParams[pindx][0]
-            resultsDF.loc[indx, 'player%d_stratHF'%pindx] = stratParams[pindx][1].\
-                get('hurtFirst', False)
-            resultsDF.loc[indx, 'player%d_stratHM'%pindx] = stratParams[pindx][1].\
-                get('hailMary', False)
-            resultsDF.loc[indx, 'player%d_stratWP'%pindx] = stratParams[pindx][1].\
-                get('addWildPoints', False)
-            resultsDF.loc[indx, 'player%d_stratCP'%pindx] = stratParams[pindx][1].\
-                get('countNotPoint', False)
-            resultsDF.loc[indx, 'player%d_cards_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][0]
-            resultsDF.loc[indx, 'player%d_points_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][1]
-            resultsDF.loc[indx, 'player%d_wilds_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-1][0]
-            resultsDF.loc[indx, 'player%d_wildplus4s_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-1][1]
-            resultsDF.loc[indx, 'player%d_revs_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-2][0]
-            resultsDF.loc[indx, 'player%d_skps_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-2][1]
-            resultsDF.loc[indx, 'player%d_plus2s_played'%pindx] = allResults[indx]\
-                ['player played summary'][pindx][-2][2]
-            resultsDF.loc[indx, 'player%d_remain_cards'%pindx] = allResults[indx]\
-                ['player remaining summary'][pindx][0]
-            resultsDF.loc[indx, 'player%d_remain_points'%pindx] = allResults[indx]\
-                ['player remaining summary'][pindx][1]
-            resultsDF.loc[indx, 'player%d_rank'%pindx] = allResults[indx]\
-                ['player ranking'][pindx]
-        # add winner data again as separate features
-        winr = allResults[indx]['winner']
-        resultsDF.loc[indx, 'winner_strat_params'] = stratParams[winr][2]
-        resultsDF.loc[indx, 'winner_strat'] = stratParams[winr][0]
-        resultsDF.loc[indx, 'winner_stratHF'] = stratParams[winr][1].\
-            get('hurtFirst', False)
-        resultsDF.loc[indx, 'winner_stratHM'] = stratParams[winr][1].\
-            get('hailMary', False)
-        resultsDF.loc[indx, 'winner_stratWP'] = stratParams[winr][1].\
-            get('addWildPoints', False)
-        resultsDF.loc[indx, 'winner_stratCP'] = stratParams[winr][1].\
-            get('countNotPoint', False)
-        resultsDF.loc[indx, 'winner_cards_played'] = allResults[indx]\
-            ['player played summary'][winr][0]
-        resultsDF.loc[indx, 'winner_points_played'] = allResults[indx]\
-            ['player played summary'][winr][1]
-        resultsDF.loc[indx, 'winner_wilds_played'] = allResults[indx]\
-            ['player played summary'][winr][-1][0]
-        resultsDF.loc[indx, 'winner_wildplus4s_played'] = allResults[indx]\
-            ['player played summary'][winr][-1][1]
-        resultsDF.loc[indx, 'winner_revs_played'] = allResults[indx]\
-            ['player played summary'][winr][-2][0]
-        resultsDF.loc[indx, 'winner_skps_played'] = allResults[indx]\
-            ['player played summary'][winr][-2][1]
-        resultsDF.loc[indx, 'winner_plus2s_played'] = allResults[indx]\
-            ['player played summary'][winr][-2][2]
-
-        # serialize results
-        filName = loggFilName[:-4] + '.p'
-        pickle.dump({'results':allResults[indx], 'game':thisGame, 'log file':loggFilName},
-                    file=open(filName, 'wb'))
-        gLogg.info('\nGame results serialized to %s', filName)
-        eLogg.info('\nGame results serialized to %s', filName)
-        gameRunFiles[indx] = filName
+            eLogg.debug('Sequential run %d complete', gameIndx)
+            # save results
+            allResults[gameIndx] = gameResults
+            resultsDF[gameIndx] = gameResDF
+            gameRunFiles[gameIndx] = gameFilName
+            # update design use counts
+            for pIndx in range(len(playerNames)):
+                designUseCounts[stratParams[pIndx][0]][stratParams[pIndx][-1]] += 1
+    
+    # compile results
+    resultsDF = pd.concat(resultsDF)
 
     # compute some possibly-useful data
     # map strat+params to integers
@@ -1792,10 +1885,20 @@ if __name__ == '__main__':
                     eLogg.info(design[strat][pIndx])
 
     # winner summary
-    print('Winner counts by strategy and start')
-    winSummary = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
+    eLogg.info('Winner frequencies by strategy and start')
+    winSummary_StratStart = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
         ['winner'].count().sort_values(ascending=False)
-    display(winSummary)
+    eLogg.info(winSummary_StratStart)
+
+    eLogg.info('Winner frequencies by strategy')
+    winSummary_Strat = resultsDF.groupby(by='winner_strat_params')['winner'].count().\
+        sort_values(ascending=False)
+    eLogg.info(winSummary_Strat)
+
+    eLogg.info('Winner frequencies by start')
+    winSummary_Start = resultsDF.groupby(by='winner_started')['winner'].count().\
+        sort_values(ascending=False)
+    eLogg.info(winSummary_Start)
 
     # timing
     MCTimeStp = dt.datetime.now()
@@ -1808,8 +1911,9 @@ if __name__ == '__main__':
                          'playerStrats':playerStrats, 'playerParams':playerParams,
                          'timing':[MCTimeStt, MCPerfStt, MCTimeStp, MCPerfStp],
                          'design':design, 'designUseCounts':designUseCounts,
-                         'resultsDF':resultsDF, 'winSummary':winSummary,
-                         'gameRunFiles':gameRunFiles}
+                         'resultsDF':resultsDF, 'allResults':allResults,
+                         'winSummaries':[winSummary_StratStart, winSummary_Strat, winSummary_Start],
+                         'gameRunFiles':gameRunFiles,}
     filName = './output/'+loggExpName+'.p'
     pickle.dump(experimentResults, file=open(filName, 'wb'))
     eLogg.info('Experiment results logged & serialized to %s.*'%filName[:-2])

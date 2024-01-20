@@ -1,5 +1,5 @@
 # Uno Game Simulator
-This is a simulator for the card game Uno. This simulator is designed to run an experiment with two major playing strategies, each with several parameterized variants. Players can either have their strategies defined by the experimenter, or assigned randomly. Simulated games follow the rules of Uno. There's no possibility of bluffing and playing a draw 4 wild, so no possibility of challenging a bluff.
+This is a simulator for the card game Uno. This simulator is designed to run an experiment with two major playing strategies, each with several parameterized variants. Players can either have their strategies defined by the experimenter, or assigned randomly. Simulated games follow the rules of Uno with one exception. There's no possibility of bluffing and playing a draw 4 wild, so no possibility of challenging a bluff and having to draw extra cards from losing a challenge.
 
 Each simulated game saves text output about what's going on to a timestamped logged file. A plethora of game information and results is also pickled to a .p file with the same timestamp. In addition, progress and summary text output is saved to a timestamped experiment file. Experiment results are also pickled to a .p file with the same timestamp.
 
@@ -11,20 +11,23 @@ I have developed and tested this with python 3.10 on Ubuntu 22 LTS. See [package
 ## Execution
 This simulator - wholly contained in [Uno.py](./Uno.py) is designed to be run from the command line with several arguments as `python3 ./Uno.py`, with arguments as listed below. Running `python3 ./Uno.py --help` will print some brief help information on the arguments. None of the arguments are validated at all. If they don't make sense, the results will be crap or the simulator will crash.
 
+On a computer with multiple cores, running games in parallel can significantly accelerate an experiment. For example, on my laptop, an experiment with 500 simulations of 4 players with debug loggin on takes about 1.3 minutes in parallel, or 2.3 minutes in serial.
+
 ### Simulation Parameters
 - `--config`: Here the experimenter can pass a path + filename of a config file to read instead of requiring the below arguments. A sample [config file][./config.env] is included.
+- `--para`: This flag tells the simulator to run games in parallel (True) or sequence (False)
 - `--sims`: This is the number of simulated games in the experiment.
 - `--player`: Each player is just defined as a player's name, for however many `--player` arguments are passed. It allows for a variable number of players, expecting 2, but doesn't otherwise restrict the number. The game itself says it's good for up to 8 players. The name associated with each `--player` argument will be put into a list in order.
 - `--startPlayer`: This is the index into the list of players of who should start. If not passed, the starting player is randomly chosen in each game.
 - `--points`: Uno is largely a points-based game, but can be played ignoring points (whoever finishes their hand wins, everyone else loses, no ranking). Passing `--points False` will simulated playing games in this latter fashion.
 - `--eDescrip`: This is a brief text description that will be part of the experiment output filenames. If not passed, 'Test' will be used.
 - `--gDescrip`: This is a brief text description that will be part of the game output filenames. If not passed, 'Test' will be used.
-- `--seed`: This is the seed for the `numpy` random number generator to be used. If not passed, a seed will be generated at the start of the experiment, based on the current time.
+- `--seed`: This is the seed for the `numpy` random number generator to be used. If not passed, a seed will be generated at the start of each game, based on the current time. Note that the seed is used for each game - it's not for the entire experiment.
 - `--debug`: By default, the logging level is `info` or higher. Setting `--debug True` reduces it to `debug` or higher.
 
-Executing, for example `python3 ./Uno.py --sims 10 --player 'Ben Dover' --player 'Hugh Jass' --points False --seed 42 --debug True` will run an experiment of Ben and Hugh playing 10 games, not counting points. The PRNG starting seed will be set to 42, and extra debug logging will be output.
+Executing, for example `python3 ./Uno.py --para True --sims 10 --player 'Ben Dover' --player 'Hugh Jass' --points False --seed 42 --debug True` will run an experiment of Ben and Hugh playing 10 games, not counting points. The PRNG starting seed will be set to 42, and extra debug logging will be output.
 
-A benefit of using a config file instead of command-line arguments is that the experimenter can define strategies & parameterizations for any of the players. Those player who don't have a defined strategy will have their randomly selected from all possibilities.
+A benefit of using a config file instead of command-line arguments is that the experimenter can define strategies & parameterizations for any of the players. Those players who don't have a defined strategy will have their randomly selected from all possibilities.
 
 ## Strategies
 The simulator has two major playing strategies, each with several parameterized variants. If any player does not have a strategy defined, it and it's parameters will be randomly selected from all possible combinations of strategies & parameterizations.
@@ -44,7 +47,31 @@ The simulator has two major playing strategies, each with several parameterized 
 
 ## Output
 ### Game
-blah
+Game logs record a lot of information about how the game was setup (players, random seed, etc.), along with turn-by-turn details. Whether run in parallel or serially, games are set up and run from the `setupRunGame` function. This function returns four objects:
+
+- `stratParams`: This is a list of strategy data used by each player in a string holding the strategy function, parameters dict, a string representation, and the parameters' index into the strategy design.
+- `gameResults`: This is just passing out the summary results returned by `Game.Play()`; it is a dictionary including:
+    - tuple of timing information
+    - integer index into the list of players of the winner
+    - list summary of played cards from `Game.cardSummary()`
+    - list summary of the cards in players' hands per player from `Game.cardSummary()`
+    - list summary of the cards played per player from `Game.cardSummary()`
+    - ranked list of player indices, sorted by points remaining in their hands from `Game.postGameSummary()`
+    - random seed used for the game
+    - integer number of times the deck was rebuilt from running out of cards
+    - integer index into the list players of the starting player
+- `resultsDF`: This is a single row dataframe indexed by the simulation number detailing a plethora of information gleaned from `gameResults`, including overall game statistics, player characteristics and statistics, and winner statistics. At the end of the simulation, these dataframes are all concatenated together for experiment analysis.
+- `filName`: This is a string file name (sans extension) for both the game log and pickle file.
+
 
 ### Experiment
-blah
+The experiment log records input experiment parameters, log and pickle filenames from each game, some summary analysis, and run statistics. The pickled experiment results dictionary includes input experiment parameters, game details, and summary analysis:
+
+- all input parameters
+- `timing`: tuple of timing information
+- `design`: dict of list of dicts holding all strategy & parameter combinations
+- `designUseCounts` dict of parameter set use counts across entire experiment
+- `resultsDF`: dataframe of concatenated `resultsDF` dataframes from all games
+- `allResults`: list of `gameResults` dicts from each game
+- `winSummaries`: list of dataframe groupby winning counts, by strategy & starting, strategy, starting
+- `gameRunFiles`: list of string file names (sans extension) for the game log and pickle files
