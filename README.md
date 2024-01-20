@@ -13,6 +13,7 @@ This simulator - wholly contained in [Uno.py](./Uno.py) is designed to be run fr
 
 ### Simulation Parameters
 - `--config`: Here the experimenter can pass a path + filename of a config file to read instead of requiring the below arguments. A sample [config file][./config.env] is included.
+- `--para`: This flag tells the simulator to run games in parallel (True) or sequence (False)
 - `--sims`: This is the number of simulated games in the experiment.
 - `--player`: Each player is just defined as a player's name, for however many `--player` arguments are passed. It allows for a variable number of players, expecting 2, but doesn't otherwise restrict the number. The game itself says it's good for up to 8 players. The name associated with each `--player` argument will be put into a list in order.
 - `--startPlayer`: This is the index into the list of players of who should start. If not passed, the starting player is randomly chosen in each game.
@@ -22,9 +23,9 @@ This simulator - wholly contained in [Uno.py](./Uno.py) is designed to be run fr
 - `--seed`: This is the seed for the `numpy` random number generator to be used. If not passed, a seed will be generated at the start of the experiment, based on the current time.
 - `--debug`: By default, the logging level is `info` or higher. Setting `--debug True` reduces it to `debug` or higher.
 
-Executing, for example `python3 ./Uno.py --sims 10 --player 'Ben Dover' --player 'Hugh Jass' --points False --seed 42 --debug True` will run an experiment of Ben and Hugh playing 10 games, not counting points. The PRNG starting seed will be set to 42, and extra debug logging will be output.
+Executing, for example `python3 ./Uno.py --para True --sims 10 --player 'Ben Dover' --player 'Hugh Jass' --points False --seed 42 --debug True` will run an experiment of Ben and Hugh playing 10 games, not counting points. The PRNG starting seed will be set to 42, and extra debug logging will be output.
 
-A benefit of using a config file instead of command-line arguments is that the experimenter can define strategies & parameterizations for any of the players. Those player who don't have a defined strategy will have their randomly selected from all possibilities.
+A benefit of using a config file instead of command-line arguments is that the experimenter can define strategies & parameterizations for any of the players. Those players who don't have a defined strategy will have their randomly selected from all possibilities.
 
 ## Strategies
 The simulator has two major playing strategies, each with several parameterized variants. If any player does not have a strategy defined, it and it's parameters will be randomly selected from all possible combinations of strategies & parameterizations.

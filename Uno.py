@@ -1,8 +1,4 @@
 '''
-# TODO: add games running with multiprocessing (can this work with the logg as it is setup?)
-with multiprocessing.Pool() as pool:
-    for (indx, expd) in pool.imap(expandDates, thisData.itertuples(name=None)):
-        results[indx] = expd
 # TODO: someday refactor strategies and how playable cards are passed
 '''
 from itertools import product
@@ -84,6 +80,7 @@ def getCreateLogger(name:str, file:str=None, level:int=0):
 def parseArgs():
     '''
     Function to parse the command line inputs.
+    :return parallel: boolean flag; True = parallel run, False = sequential run
     :return MCSims: integer number of simulations in experiment
     :return playerNames: list of string player names 
     :return startPlayer: optional (None) starting player index
@@ -106,49 +103,53 @@ def parseArgs():
                         help='Optional config file to read, ignoring all other arguments')
     
     # required (not really, but nearly)
+    parser.add_argument('--para', type=str, default='True',
+                        help='Flag to run games in parallel, rather than in sequence (default=True)')
     parser.add_argument('--sims', type=int, help='Number of simulations in experiment')
     parser.add_argument('--player', type=str, action='append',
                         help='Name of player, must be at least 2')
     # optional
     parser.add_argument('--startPlayer', type=int, default=None,
                         help='Starting player index (default=None)')
-    parser.add_argument('--points', type=bool, default=True,
+    parser.add_argument('--points', type=str, default='True',
                         help='Flag to give cards point values (default=True)')
     parser.add_argument('--eDescrip', type=str, default='Test',
                         help='Description test for experiment (default=Test)')
     parser.add_argument('--gDescrip', type=str, default='Test',
                         help='Description test for games (default=Test)')
     parser.add_argument('--seed', type=int, default=None, help='PRNG seed (default=None)')
-    parser.add_argument('--debug', type=bool, default=True,
+    parser.add_argument('--debug', type=str, default='True',
                         help='Print extra debugging messages to logs (default=True)')
 
-    # parse them
+    # parse them TODO: are bools coming through correctly?
     args = parser.parse_args()
     if args.config is not None:
         config = args.config
-        (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-         rndSeed, debug, playerStrats, playerParams) = parseCnfg(config)
+        (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+         gameDescrip, rndSeed, debug, playerStrats, playerParams) = parseCnfg(config)
     else:
+        parallel = args.para == 'True'
         MCSims = args.sims
         playerNames = args.player
         startPlayer = args.startPlayer
-        cardPoints = args.points
+        cardPoints = args.points == 'True'
         experDescrip = args.eDescrip
         gameDescrip = args.gDescrip
         rndSeed = args.seed
-        debug = args.debug
+        debug = args.debug == 'True'
         config = None
         playerStrats = [None]*len(playerNames)
         playerParams = [None]*len(playerNames)
 
-    return (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-            rndSeed, debug, config, playerStrats, playerParams)
+    return (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+            gameDescrip, rndSeed, debug, config, playerStrats, playerParams)
 
 
 def parseCnfg(configFile:str):
     '''
     Function to parse the config file.
     :param configFile: full path to file with simulation configuration
+    :return parallel: boolean flag; True = parallel run, False = sequential run
     :return MCSims: integer number of simulations in experiment
     :return playerNames: list of string player names 
     :return startPlayer: optional (None) starting player index
@@ -166,31 +167,32 @@ def parseCnfg(configFile:str):
     config = dotenv_values(configFile)
 
     # parse values
-    MCSims = int(config['sims'])
+    parallel = config['parallel'] == 'True'
+    MCSims = int(config['numberSims'])
     startPlayer = config.get('startPlayer', None)
-    cardPoints = bool(config.get('points', True))
+    cardPoints = config.get('cardPoints', True) == 'True'
     experDescrip = config.get('eDescrip', 'Test')
     gameDescrip = config.get('gDescrip', 'Test')
     rndSeed = config.get('seed', None)
     if rndSeed is not None:
         rndSeed = int(rndSeed)
-    debug = bool(config.get('debug', True))
+    debug = config.get('debug', True) == 'True'
 
     # parse players data
     playerNames = []
     playerStrats = []
     playerParams = []
     for indx in range(8):
-        if config['NAME_%d'%indx] is not None:
-            playerNames.append(config['NAME_%d'%indx])
+        if config['name_%d'%indx] is not None:
+            playerNames.append(config['name_%d'%indx])
             playerStrats.append(None)
             playerParams.append(None)
             # there is a player, so check for a strat
-            if config['STRAT_%d'%indx] is not None:
-                playerStrats[indx] = globals()[config['STRAT_%d'%indx]]
-                playerParams[indx] = eval(config['PARAMS_%d'%indx])
+            if config['strat_%d'%indx] is not None:
+                playerStrats[indx] = globals()[config['strat_%d'%indx]]
+                playerParams[indx] = eval(config['params_%d'%indx])
     
-    return (MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+    return (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
             gameDescrip, rndSeed, debug, playerStrats, playerParams)
 
 
@@ -1620,11 +1622,11 @@ def designExperiment():
 
 
 
-def parallelGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
+def setupRunGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
                  playerNames:list, playerStrats:list, playerParams:list,
                  design:dict, startPlayer, cardPoints, rndSeed):
     '''
-    Run a game, designed for parallel running.
+    Setup and run a game.
     :param indx: integer index of game in simulation
     :param eLogg: experiment logger
     :poaram MCSims: integer number of games in simulation
@@ -1774,8 +1776,9 @@ def parallelGame(indx:int, eLogg, MCSims:int, gameDescrip:str, logLevel:int,
 ''' EXECUTE '''
 if __name__ == '__main__':
     # get the parameters
-    hardCodeDebug = False # TODO: this will go away, but for now makes some dev easier
+    hardCodeDebug = False # TODO: this might go away, but for now makes some dev easier
     if hardCodeDebug:
+        parallel = False
         MCSims = 10
         playerNames =['A', 'B', 'C', 'D']
         startPlayer = None
@@ -1786,10 +1789,10 @@ if __name__ == '__main__':
         playerStrats = [None]*len(playerNames)
         playerParams = [None]*len(playerNames)
     else:
-        (MCSims, playerNames, startPlayer, cardPoints, experDescrip, gameDescrip,
-        rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
+        (parallel, MCSims, playerNames, startPlayer, cardPoints, experDescrip,
+         gameDescrip, rndSeed, debug, config, playerStrats, playerParams) = parseArgs()
     logLevel = [20, 10][int(debug)] # 10=DEBUG+, 20=INFO+
-
+    
     # start experiment logging
     experSttTS = dt.datetime.now()
     loggExpName = 'Uno_Experiment_'+re.sub(pattern='[^a-zA-Z0-9]', repl='_',
@@ -1809,8 +1812,9 @@ if __name__ == '__main__':
     MCPerfStt = time.perf_counter()
 
     # talk
-    eLogg.info('Experiment %s with %d games begun on %s', experDescrip, MCSims,
-               MCTimeStt.strftime('%Y%m%d_%H%M%S'))
+    eLogg.info('Experiment %s with %d games begun on %s, running in %s',
+               experDescrip, MCSims, MCTimeStt.strftime('%Y%m%d_%H%M%S'),
+               ['sequence', 'parallel'][int(parallel)])
     eLogg.info('Cards have points = %s', cardPoints)
     if rndSeed is not None:
         eLogg.info('Random seed = %d', rndSeed)
@@ -1820,21 +1824,39 @@ if __name__ == '__main__':
     else:
         eLogg.info('Starting player = randomized')
 
-    # run games in parallel
+    # setup to store results
     allResults = [None]*MCSims
     resultsDF = [None]*MCSims
     gameRunFiles = [None]*MCSims
 
-    def thisParaGame(indx):
-        return parallelGame(indx, eLogg, MCSims, gameDescrip, logLevel, playerNames,
-                            playerStrats, playerParams, design, startPlayer,
-                            cardPoints, rndSeed)
-    
-    with multiprocessing.Pool() as pool:
-        for (gameIndx, stratParams, gameResults, gameResDF, gameFilName) in\
-            pool.imap(thisParaGame, range(MCSims)):
+    if parallel:
+        # run in parallel
+        def thisParaGame(indx):
+            return setupRunGame(indx, eLogg, MCSims, gameDescrip, logLevel, playerNames,
+                                playerStrats, playerParams, design, startPlayer,
+                                cardPoints, rndSeed)
+        
+        with multiprocessing.Pool() as pool:
+            for (gameIndx, stratParams, gameResults, gameResDF, gameFilName) in\
+                pool.imap(thisParaGame, range(MCSims)):
+                # talk
+                eLogg.debug('Parallel run %d complete', gameIndx)
+                # save results
+                allResults[gameIndx] = gameResults
+                resultsDF[gameIndx] = gameResDF
+                gameRunFiles[gameIndx] = gameFilName
+                # update design use counts
+                for pIndx in range(len(playerNames)):
+                    designUseCounts[stratParams[pIndx][0]][stratParams[pIndx][-1]] += 1
+    else:
+        # run in sequence
+        for indx in range(MCSims):
+            gameIndx, stratParams, gameResults, gameResDF, gameFilName =\
+                setupRunGame(indx, eLogg, MCSims, gameDescrip, logLevel, playerNames,
+                             playerStrats, playerParams, design, startPlayer,
+                             cardPoints, rndSeed)
             # talk
-            eLogg.debug('Parallel run %d complete', gameIndx)
+            eLogg.debug('Sequential run %d complete', gameIndx)
             # save results
             allResults[gameIndx] = gameResults
             resultsDF[gameIndx] = gameResDF
