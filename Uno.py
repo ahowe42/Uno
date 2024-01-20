@@ -10,7 +10,6 @@ import logging
 import time
 import datetime as dt
 import multiprocessing
-from IPython.display import display
 import numpy as np
 import ipdb
 import re
@@ -1885,11 +1884,16 @@ if __name__ == '__main__':
                 if designUseCounts[strat][pIndx] == 0:
                     eLogg.info(design[strat][pIndx])
 
-    # winner summary
-    print('Winner counts by strategy and start')
+    # winner summary TODO: display not going to log
+    eLogg.info('Winner counts by strategy and start')
     winSummary = resultsDF.groupby(by=['winner_strat_params','winner_started'])\
         ['winner'].count().sort_values(ascending=False)
-    display(winSummary)
+    eLogg.info(winSummary)
+
+    eLogg.info('Winner counts by start')
+    winSummary = resultsDF.groupby(by='winner_started')['winner'].count().\
+        sort_values(ascending=False)
+    eLogg.info(winSummary)
 
     # timing
     MCTimeStp = dt.datetime.now()
