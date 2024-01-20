@@ -1,5 +1,5 @@
 # Uno Game Simulator
-This is a simulator for the card game Uno. This simulator is designed to run an experiment with two major playing strategies, each with several parameterized variants. Players can either have their strategies defined by the experimenter, or assigned randomly. Simulated games follow the rules of Uno. There's no possibility of bluffing and playing a draw 4 wild, so no possibility of challenging a bluff.
+This is a simulator for the card game Uno. This simulator is designed to run an experiment with two major playing strategies, each with several parameterized variants. Players can either have their strategies defined by the experimenter, or assigned randomly. Simulated games follow the rules of Uno with one exception. There's no possibility of bluffing and playing a draw 4 wild, so no possibility of challenging a bluff and having to draw extra cards from losing a challenge.
 
 Each simulated game saves text output about what's going on to a timestamped logged file. A plethora of game information and results is also pickled to a .p file with the same timestamp. In addition, progress and summary text output is saved to a timestamped experiment file. Experiment results are also pickled to a .p file with the same timestamp.
 
@@ -48,6 +48,7 @@ The simulator has two major playing strategies, each with several parameterized 
 ## Output
 ### Game
 Game logs record a lot of information about how the game was setup (players, random seed, etc.), along with turn-by-turn details. Whether run in parallel or serially, games are set up and run from the `setupRunGame` function. This function returns four objects:
+
 - `stratParams`: This is a list of strategy data used by each player in a string holding the strategy function, parameters dict, a string representation, and the parameters' index into the strategy design.
 - `gameResults`: This is just passing out the summary results returned by `Game.Play()`; it is a dictionary including:
     - tuple of timing information
@@ -65,6 +66,7 @@ Game logs record a lot of information about how the game was setup (players, ran
 
 ### Experiment
 The experiment log records input experiment parameters, log and pickle filenames from each game, some summary analysis, and run statistics. The pickled experiment results dictionary includes input experiment parameters, game details, and summary analysis:
+
 - all input parameters
 - `timing`: tuple of timing information
 - `design`: dict of list of dicts holding all strategy & parameter combinations
